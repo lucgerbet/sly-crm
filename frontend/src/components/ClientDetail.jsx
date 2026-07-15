@@ -7,6 +7,7 @@ import {
 
 const EMPTY = {
   first_name:'', last_name:'', phone:'', email:'', city:'', country:'', source:'', tags:'', notes:'',
+  birth_date:'', email_opt_out:0,
   next_step:'', last_contacted_date:'',
   ca_lifetime:'', purchase_count:'', last_purchase_date:'', last_purchase_item:'',
   assigned_to:'', potential:'',
@@ -353,6 +354,24 @@ export default function ClientDetail({ clientId, onClose, onSaved, onDeleted, on
                   <Field label="Source"><Input value={form.source} onChange={set('source')} placeholder="Instagram, referral…" /></Field>
                   <Field label="Tags"><Input value={form.tags} onChange={set('tags')} placeholder="vip, wholesale…" /></Field>
                 </div>
+                <div className="grid grid-cols-2 gap-3 items-end">
+                  <Field label="Birthday">
+                    <Input type="date" value={form.birth_date} onChange={v => (isNew ? set('birth_date')(v) : quickSet('birth_date', v))} />
+                  </Field>
+                  <label className="flex items-center gap-2 text-xs text-ink-secondary pb-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={!!form.email_opt_out}
+                      onChange={e => (isNew ? set('email_opt_out')(e.target.checked ? 1 : 0) : quickSet('email_opt_out', e.target.checked ? 1 : 0))}
+                    />
+                    Opted out of automated emails
+                  </label>
+                </div>
+                {form.birth_date ? (
+                  <div className="text-[10px] text-ink-secondary">
+                    Used for the birthday reminder + greeting emails — see the Automation tab.
+                  </div>
+                ) : null}
               </div>
 
               <div className="space-y-3">

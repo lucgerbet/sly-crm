@@ -6,6 +6,7 @@ const router = Router();
 
 const CLIENT_FIELDS = [
   'first_name','last_name','phone','email','city','country','source','tags','notes',
+  'birth_date','email_opt_out',
   'next_step','last_contacted_date','target_contact_date',
   'ca_lifetime','purchase_count','last_purchase_date','last_purchase_item',
   'assigned_to','potential',

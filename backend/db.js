@@ -29,6 +29,8 @@ export function migrate() {
       source TEXT,
       tags TEXT,
       notes TEXT,
+      birth_date TEXT,
+      email_opt_out INTEGER DEFAULT 0,
 
       -- Follow-up (lightweight, always-visible)
       next_step TEXT,
@@ -85,11 +87,20 @@ export function migrate() {
     );
   `);
 
+  // Idempotent column adds for databases created before birthday automation existed.
+  const addColumn = (table, col, def) => {
+    try { db.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${def}`); } catch (_) { /* exists */ }
+  };
+  addColumn('clients', 'birth_date', 'TEXT');
+  addColumn('clients', 'email_opt_out', 'INTEGER DEFAULT 0');
+
   db.exec(`
     CREATE INDEX IF NOT EXISTS idx_clients_assigned ON clients(assigned_to);
     CREATE INDEX IF NOT EXISTS idx_clients_target ON clients(target_contact_date);
     CREATE INDEX IF NOT EXISTS idx_clients_contacted ON clients(contacted);
+    CREATE INDEX IF NOT EXISTS idx_clients_birth ON clients(birth_date);
     CREATE INDEX IF NOT EXISTS idx_messages_client ON messages(client_id);
+    CREATE INDEX IF NOT EXISTS idx_messages_type_date ON messages(type, date);
   `);
 
   // Seed default goal settings (only if absent) — SLY starts from zero, so
@@ -103,6 +114,18 @@ export function migrate() {
   seed.run('campaign_start', today);
   seed.run('campaign_deadline', '');
   seed.run('currency', '€');
+
+  // Birthday email automation — disabled by default until RESEND_API_KEY is set
+  // and the user has reviewed the template wording (see routes/automation.js).
+  seed.run('automation_enabled', '0');
+  seed.run('birthday_reminder_days_before', '30');
+  seed.run('shop_url', '');
+  seed.run('birthday_reminder_subject', 'Something for you before your birthday? 🎂');
+  seed.run('birthday_reminder_body',
+    "Hi {{first_name}},\n\nYour birthday is coming up next month — a good excuse to treat yourself to something new from SLY.\n\nTake a look: {{shop_url}}\n\nSee you soon,\nSLY");
+  seed.run('birthday_greeting_subject', 'Happy birthday from SLY 🎉');
+  seed.run('birthday_greeting_body',
+    "Happy birthday {{first_name}}! 🎉\n\nWe hope you have a wonderful day.\n\nWarmly,\nSLY");
 }
 
 export default db;

@@ -1,6 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
+import cron from 'node-cron';
 import path from 'node:path';
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -11,6 +12,9 @@ import statsRouter from './routes/stats.js';
 import settingsRouter from './routes/settings.js';
 import trackerRouter from './routes/tracker.js';
 import reportsRouter from './routes/reports.js';
+import automationRouter from './routes/automation.js';
+import unsubscribeRouter from './routes/unsubscribe.js';
+import { runBirthdayAutomation } from './lib/birthdayJob.js';
 
 dotenv.config();
 
@@ -37,6 +41,9 @@ app.use('/api', statsRouter);
 app.use('/api/settings', settingsRouter);
 app.use('/api/tracker', trackerRouter);
 app.use('/api/reports', reportsRouter);
+app.use('/api/automation', automationRouter);
+// Public — no Basic Auth (see the dedicated Traefik router in docker-compose.yml).
+app.use('/api/unsubscribe', unsubscribeRouter);
 
 app.use('/api', (_req, res) => res.status(404).json({ error: 'Not found' }));
 
@@ -55,3 +62,12 @@ const PORT = process.env.PORT || 3003;
 app.listen(PORT, () => {
   console.log(`\n  SLY — CRM → http://localhost:${PORT}\n`);
 });
+
+// Daily birthday-email check. runBirthdayAutomation() is itself a no-op unless
+// RESEND_API_KEY is set and automation is turned on in Settings, so this is
+// safe to leave scheduled even before either is configured.
+cron.schedule('0 8 * * *', () => {
+  runBirthdayAutomation({ baseUrl: process.env.PUBLIC_URL })
+    .then(r => { if (!r.skipped) console.log(`[birthday-automation] ${r.reminders.length} reminders, ${r.greetings.length} greetings`); })
+    .catch(e => console.error('[birthday-automation] failed', e));
+}, { timezone: process.env.TZ || 'Europe/Paris' });

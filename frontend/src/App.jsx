@@ -4,12 +4,14 @@ import ClientList from './components/ClientList.jsx';
 import ClientDetail from './components/ClientDetail.jsx';
 import Daily from './components/Daily.jsx';
 import Reports from './components/Reports.jsx';
+import Automation from './components/Automation.jsx';
 
 const TABS = [
   { id: 'dashboard', label: 'Dashboard' },
   { id: 'daily',     label: 'My Day'    },
   { id: 'clients',   label: 'Clients'   },
   { id: 'reports',   label: 'Reports'   },
+  { id: 'automation', label: 'Automation' },
 ];
 
 let toastId = 0;
@@ -118,6 +120,7 @@ export default function App() {
           />
         )}
         {view === 'reports' && <Reports key={`rep-${refreshKey}`} />}
+        {view === 'automation' && <Automation key={`auto-${refreshKey}`} notify={notify} />}
       </main>
 
       {panelOpen && (

@@ -33,6 +33,8 @@ export const MESSAGE_TYPES = {
   reply:       { label: 'Client reply',  color: 'border-green-200 bg-green-50', text: 'text-green-700'  },
   appointment: { label: 'Meeting',       color: 'border-orange-200 bg-orange-50', text: 'text-orange-700' },
   sale:        { label: 'Sale',          color: 'border-violet-200 bg-violet-50', text: 'text-violet-700' },
+  birthday_reminder: { label: 'Birthday reminder (auto)', color: 'border-pink-200 bg-pink-50', text: 'text-pink-700' },
+  birthday_greeting: { label: 'Birthday greeting (auto)', color: 'border-pink-200 bg-pink-50', text: 'text-pink-700' },
 };
 
 // Compute effective timing bucket from a target contact date (mirrors backend)

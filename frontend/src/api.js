@@ -43,4 +43,8 @@ export const api = {
     request(`/clients/${clientId}/messages`, { method: 'POST', body: JSON.stringify(data) }),
   deleteMessage: (clientId, msgId) =>
     request(`/clients/${clientId}/messages/${msgId}`, { method: 'DELETE' }),
+
+  automationStatus: () => request('/automation/status'),
+  automationRun: (dryRun) => request(`/automation/run${dryRun ? '?dryRun=1' : ''}`, { method: 'POST' }),
+  automationTestEmail: (to) => request('/automation/test-email', { method: 'POST', body: JSON.stringify({ to }) }),
 };
