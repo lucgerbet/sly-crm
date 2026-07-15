@@ -1,0 +1,10 @@
+**/node_modules
+frontend/dist
+backend/public
+*.db
+*.db-shm
+*.db-wal
+*.bak
+.DS_Store
+.claude
+.git

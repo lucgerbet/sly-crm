@@ -1,0 +1,67 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html { font-family: 'Inter', system-ui, sans-serif; }
+  body { @apply bg-bg text-ink-primary antialiased; font-size: 14px; }
+  * { border-color: #e5e5e0; }
+}
+
+@layer components {
+  .af-card { @apply bg-surface border border-line rounded-card; padding: 16px 20px; }
+
+  .af-btn { @apply rounded-md px-4 py-2 text-sm font-medium transition-all; }
+  .af-btn-primary { @apply af-btn bg-accent text-white; }
+  .af-btn-primary:hover { opacity: 0.85; }
+  .af-btn-primary:disabled { opacity: 0.4; cursor: not-allowed; }
+  .af-btn-secondary { @apply af-btn border border-line text-ink-secondary bg-transparent; }
+  .af-btn-secondary:hover { @apply border-accent text-ink-primary; }
+  .af-btn-danger { @apply af-btn bg-red-600 text-white; }
+  .af-btn-danger:hover { opacity: 0.85; }
+
+  .af-badge {
+    @apply inline-flex items-center rounded-full font-medium uppercase;
+    font-size: 11px; letter-spacing: 0.06em; padding: 2px 9px;
+  }
+
+  .af-input {
+    @apply w-full border border-line rounded-md bg-surface px-3 py-2 text-sm outline-none transition-colors;
+  }
+  .af-input:focus { @apply border-accent; }
+  .af-input:disabled { @apply bg-gray-50 text-ink-secondary cursor-not-allowed; }
+
+  .af-select {
+    @apply w-full border border-line rounded-md bg-surface px-3 py-2 text-sm outline-none transition-colors;
+  }
+  .af-select:focus { @apply border-accent; }
+
+  .af-label {
+    @apply block text-ink-secondary mb-1;
+    font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em;
+  }
+
+  .af-section-title {
+    @apply text-xs font-medium text-ink-secondary uppercase tracking-widest mb-3 mt-6 first:mt-0;
+  }
+}
+
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-thumb { background: #d8d8d2; border-radius: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+
+/* Print: produce a clean PDF of the report only */
+@media print {
+  @page { size: A4; margin: 14mm; }
+  header, .no-print { display: none !important; }
+  body { background: #fff !important; }
+  main { max-width: none !important; padding: 0 !important; }
+  .print-only { display: block !important; }
+  .report-card {
+    break-inside: avoid;
+    border: 0.5px solid #e5e5e0 !important;
+    box-shadow: none !important;
+  }
+  * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+}
+.print-only { display: none; }

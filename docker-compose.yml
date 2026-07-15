@@ -1,0 +1,33 @@
+# SLY — CRM — production compose for the Hostinger VPS.
+# Mirrors the working af-crm / reactivation-crm pattern: no explicit network
+# (host-mode Traefik discovers the container on its default bridge),
+# `expose` + Traefik labels, TLS via the "letsencrypt" resolver.
+#
+# Basic-auth reuses the same `luc` credential as af-crm / reactivation-crm.
+
+services:
+  sly-crm:
+    build:
+      context: .
+    container_name: sly-crm
+    restart: unless-stopped
+    expose:
+      - "3003"
+    labels:
+      - traefik.enable=true
+      - "traefik.http.routers.slycrm.rule=Host(`sly-crm.srv1758374.hstgr.cloud`)"
+      - traefik.http.routers.slycrm.entrypoints=websecure
+      - traefik.http.routers.slycrm.tls.certresolver=letsencrypt
+      - traefik.http.services.slycrm.loadbalancer.server.port=3003
+      - traefik.http.routers.slycrm.middlewares=slycrm-auth
+      - "traefik.http.middlewares.slycrm-auth.basicauth.users=luc:$$apr1$$i1Kgwqgl$$cp0agUbwbhJ5SDvQKxqxP1"
+    environment:
+      - NODE_ENV=production
+      - DATABASE_PATH=/data/sly_crm.db
+      - PORT=3003
+      - TZ=Europe/Paris
+    volumes:
+      - sly_crm_data:/data
+
+volumes:
+  sly_crm_data:
