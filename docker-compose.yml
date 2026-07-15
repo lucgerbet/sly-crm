@@ -23,10 +23,12 @@ services:
       - "traefik.http.routers.slycrm-public.rule=Host(`sly-crm.srv1758374.hstgr.cloud`) && PathPrefix(`/api/unsubscribe`)"
       - traefik.http.routers.slycrm-public.entrypoints=websecure
       - traefik.http.routers.slycrm-public.tls.certresolver=letsencrypt
+      - traefik.http.routers.slycrm-public.service=slycrm-public
       - traefik.http.services.slycrm-public.loadbalancer.server.port=3003
       - "traefik.http.routers.slycrm.rule=Host(`sly-crm.srv1758374.hstgr.cloud`)"
       - traefik.http.routers.slycrm.entrypoints=websecure
       - traefik.http.routers.slycrm.tls.certresolver=letsencrypt
+      - traefik.http.routers.slycrm.service=slycrm
       - traefik.http.services.slycrm.loadbalancer.server.port=3003
       - traefik.http.routers.slycrm.middlewares=slycrm-auth
       - "traefik.http.middlewares.slycrm-auth.basicauth.users=luc.gerbet:$$apr1$$PrYu.99m$$dbmY8YN92V/3EKq7HDGkS."
