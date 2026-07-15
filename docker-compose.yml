@@ -3,7 +3,9 @@
 # (host-mode Traefik discovers the container on its default bridge),
 # `expose` + Traefik labels, TLS via the "letsencrypt" resolver.
 #
-# Basic-auth reuses the same `luc` credential as af-crm / reactivation-crm.
+# Basic-auth is a dedicated credential for SLY, separate from af-crm / reactivation-crm
+# (username: luc.gerbet — dot instead of a space, since Traefik's basicauth users list
+# is comma/colon-delimited and a literal space in the username is best avoided).
 
 services:
   sly-crm:
@@ -20,7 +22,7 @@ services:
       - traefik.http.routers.slycrm.tls.certresolver=letsencrypt
       - traefik.http.services.slycrm.loadbalancer.server.port=3003
       - traefik.http.routers.slycrm.middlewares=slycrm-auth
-      - "traefik.http.middlewares.slycrm-auth.basicauth.users=luc:$$apr1$$i1Kgwqgl$$cp0agUbwbhJ5SDvQKxqxP1"
+      - "traefik.http.middlewares.slycrm-auth.basicauth.users=luc.gerbet:$$apr1$$PrYu.99m$$dbmY8YN92V/3EKq7HDGkS."
     environment:
       - NODE_ENV=production
       - DATABASE_PATH=/data/sly_crm.db
