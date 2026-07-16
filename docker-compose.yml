@@ -17,10 +17,17 @@ services:
       - "3003"
     labels:
       - traefik.enable=true
-      # Public router — no Basic Auth — for the email unsubscribe link only.
-      # Rule length gives it higher priority than the catch-all router below,
-      # so only /api/unsubscribe/* skips auth; everything else stays protected.
-      - "traefik.http.routers.slycrm-public.rule=Host(`sly-crm.srv1758374.hstgr.cloud`) && PathPrefix(`/api/unsubscribe`)"
+      # Public router — no Basic Auth — for callers that aren't a human browser
+      # session: the unsubscribe link, Stripe/Calendly webhooks, and sly-shop's
+      # server-to-server order intake/finalize/booking calls. Rule specificity
+      # gives this router higher priority than the catch-all router below, so
+      # only these path prefixes skip auth; everything else stays protected.
+      # NOTE: Traefik only strips Basic Auth here — it is NOT the real security
+      # boundary for the new routes. /api/webhooks/stripe verifies Stripe's
+      # signature; /api/orders/* and /api/appointments/from-widget check a
+      # bearer SLY_INTAKE_SECRET — both inside Express (see lib/orderHelpers.js
+      # and lib/stripe.js).
+      - "traefik.http.routers.slycrm-public.rule=Host(`sly-crm.srv1758374.hstgr.cloud`) && (PathPrefix(`/api/unsubscribe`) || PathPrefix(`/api/webhooks`) || PathPrefix(`/api/orders/intake`) || PathPrefix(`/api/orders/finalize`) || PathPrefix(`/api/appointments/from-widget`))"
       - traefik.http.routers.slycrm-public.entrypoints=websecure
       - traefik.http.routers.slycrm-public.tls.certresolver=letsencrypt
       - traefik.http.routers.slycrm-public.service=slycrm-public

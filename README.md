@@ -38,10 +38,16 @@ sly-crm/
 │       ├── reports.js       funnel + charts data
 │       ├── settings.js      goal targets, currency, automation templates
 │       ├── automation.js    birthday automation status / manual run / test email
-│       └── unsubscribe.js   public opt-out link (no Basic Auth — see Deploy)
+│       ├── unsubscribe.js   public opt-out link (no Basic Auth — see Deploy)
+│       ├── orders.js        order intake (from sly-shop) + finalize (from the order-taking tool)
+│       ├── webhooks.js      Stripe checkout.session.completed handler (deposit + balance)
+│       └── appointments.js  Calendly booking intake (from-widget) + 2h reminder status/run
 │   └── lib/
-│       ├── email.js         Resend HTTP wrapper + {{placeholder}} rendering
-│       └── birthdayJob.js   finds birthday-reminder/-greeting candidates, sends, logs
+│       ├── email.js         Resend HTTP wrapper + {{placeholder}} rendering + wrapHtml
+│       ├── stripe.js        Payment Link creation + webhook signature verification
+│       ├── orderHelpers.js  shared client find-or-create, money/date formatting, order numbers
+│       ├── birthdayJob.js   finds birthday-reminder/-greeting candidates, sends, logs
+│       └── appointmentReminderJob.js  finds appointments ~2h out, sends, logs
 └── frontend/
     └── src/
         ├── App.jsx           shell: header, tab nav, toasts, slide-over panel
@@ -81,6 +87,31 @@ the Automation tab.
 
 WhatsApp automation was intentionally left out for now — see the conversation this was built in
 for the trade-offs (official WhatsApp Business API vs. unofficial/bannable automation).
+
+## Order / appointment automation (sly-shop integration)
+
+Connects the sly-shop configurator + Stripe deposit + Calendly booking flow to this CRM, so every
+step of an order — appointment confirmation, a 2h-before reminder, CRM sync, order recap + balance
+payment link, payment confirmation — happens automatically instead of relying on a customer's
+browser tab staying open (see the `orders`/`appointments` tables and `routes/orders.js`,
+`routes/webhooks.js`, `routes/appointments.js`).
+
+Flow: sly-shop calls `POST /api/orders/intake` right after creating the Stripe deposit Checkout
+session (before the customer pays) → the Stripe webhook (`POST /api/webhooks/stripe`) marks the
+deposit paid → sly-shop's Calendly widget calls `POST /api/appointments/from-widget` once booked
+(Calendly is on the free plan — no server-side webhooks available, so this postMessage-driven path
+is the current integration; upgrading to a real Calendly webhook later needs zero schema changes,
+just a new route) → the confirmation email sends → a cron job every 15 minutes finds appointments
+~2h out and sends the reminder → once the (not-yet-built) order-taking tool calls
+`POST /api/orders/finalize`, a Stripe Payment Link is created for the balance and the recap email
+sends → paying that link fires the webhook again and sends the final payment confirmation.
+
+All four new server-to-server routes (`/api/webhooks/*`, `/api/orders/intake`,
+`/api/orders/finalize`, `/api/appointments/from-widget`) sit behind a public Traefik router (no
+Basic Auth — these callers aren't human browser sessions) but each independently checks its own
+secret: Stripe's webhook signature, or a shared `SLY_INTAKE_SECRET` bearer token for the rest. See
+`.env.example` for the new variables required (`STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`,
+`SLY_INTAKE_SECRET`).
 
 ## Pipeline model
 
