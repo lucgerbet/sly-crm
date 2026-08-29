@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { api } from '../api.js';
 import {
   TIMING, VALUE_TIERS, STAGE_PREREQ, STAGE_META, CONTACT_TYPE_OPTS, CONTACT_TYPE_BADGE,
-  valueTier, monthsSince, fmtDate, fmtMoney,
+  sourceBadge, valueTier, monthsSince, fmtDate, fmtMoney,
 } from '../labels.js';
 import { downloadCsv } from '../exportCsv.js';
 
@@ -173,7 +173,7 @@ export default function ClientList({ onSelect, onNew, notify, initialFilters = {
       </div>
 
       <div className="bg-surface border border-line rounded-xl overflow-hidden">
-        <div className="grid grid-cols-[190px_1fr_150px_150px_90px] border-b border-line px-4 py-2.5 bg-bg">
+        <div className="grid grid-cols-[230px_1fr_150px_150px_90px] border-b border-line px-4 py-2.5 bg-bg">
           <span className="text-[11px] font-medium text-ink-secondary">{isProspects ? 'Prospect' : 'Client'}</span>
           <span className="text-[11px] font-medium text-ink-secondary">Pipeline</span>
           <span className="text-[11px] font-medium text-ink-secondary">
@@ -203,22 +203,31 @@ export default function ClientList({ onSelect, onNew, notify, initialFilters = {
           const tierKey = valueTier(c.lifetime_value ?? c.ca_lifetime);
           const tierCfg = VALUE_TIERS[tierKey];
           const mo = monthsSince(c.last_purchase_at || c.last_purchase_date);
+          const srcCfg = sourceBadge(c.source);
           return (
             <div
               key={c.id}
-              className="grid grid-cols-[190px_1fr_150px_150px_90px] border-b border-line last:border-0 px-4 py-3 items-center hover:bg-bg cursor-pointer transition-colors"
+              className="grid grid-cols-[230px_1fr_150px_150px_90px] border-b border-line last:border-0 px-4 py-3 items-center hover:bg-bg cursor-pointer transition-colors"
               onClick={() => onSelect(c.id)}
             >
               <div>
-                <div className="flex items-center gap-1.5">
+                <div className="flex items-center gap-1.5 flex-wrap">
                   <span className="text-sm font-medium text-ink-primary">{name}</span>
                   {CONTACT_TYPE_BADGE[c.contact_type] && (
                     <span className={`text-[9px] font-medium px-1.5 py-0.5 rounded-full ${CONTACT_TYPE_BADGE[c.contact_type].color}`}>
                       {CONTACT_TYPE_BADGE[c.contact_type].label}
                     </span>
                   )}
+                  {srcCfg && (
+                    <span className={`text-[9px] font-medium px-1.5 py-0.5 rounded-full ${srcCfg.color}`}>
+                      {srcCfg.label}
+                    </span>
+                  )}
                 </div>
-                <div className="text-[11px] text-ink-secondary">{[c.city, c.source].filter(Boolean).join(' · ') || '—'}</div>
+                {/* The badge above already says where a recognised source came
+                    from — repeating "sly-shop-lead" here would be noise. A
+                    hand-typed source has no badge, so it still shows. */}
+                <div className="text-[11px] text-ink-secondary">{[c.city, srcCfg ? null : c.source].filter(Boolean).join(' · ') || '—'}</div>
                 {c.assigned_to && (
                   <div className="text-[10px] text-accent font-medium mt-0.5">→ {c.assigned_to}</div>
                 )}
@@ -236,7 +245,12 @@ export default function ClientList({ onSelect, onNew, notify, initialFilters = {
                   is the fact that actually exists about them. */}
               {isProspects ? (
                 <>
-                  <div className="text-xs text-ink-secondary">{c.source || '—'}</div>
+                  {/* The badge beside the name already gives the category.
+                      This column keeps the exact value, which is the part the
+                      badge collapses: which card (carte-luc vs carte-ben), and
+                      an abandoned lead (sly-shop-lead) vs a real order
+                      (sly-shop). */}
+                  <div className="text-xs text-ink-secondary break-words">{c.source || '—'}</div>
                   <div className="text-xs text-ink-secondary">{fmtDate(c.created_at)}</div>
                 </>
               ) : (

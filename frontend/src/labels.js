@@ -92,6 +92,30 @@ export const CONTACT_TYPE_BADGE = {
   prospect_online: { label: 'Prospect', color: 'bg-gray-100 text-gray-600' },
 };
 
+// Where a client came from. `source` is written by the intake routes
+// (sly-shop and sly-shop-lead for the site, sly-experience-gift for a gift
+// card, carte-<slug> for a business card handed over in person) and typed by
+// hand for everyone else — Instagram, a referral, a trade show.
+//
+// Only the machine-written values get a badge. A hand-typed source stays
+// displayed as typed: inventing a badge for free text would hide what was
+// actually written, which is the one thing that column is for.
+export const SOURCE_BADGE = {
+  'sly-shop':            { label: 'Website', color: 'bg-blue-100 text-blue-700' },
+  'sly-shop-lead':       { label: 'Website', color: 'bg-blue-100 text-blue-700' },
+  'sly-experience-gift': { label: 'Gift',    color: 'bg-violet-100 text-violet-700' },
+};
+
+// One source per card (carte-luc, carte-ben…), so cards match on prefix and
+// a new card needs no entry here — see src/lib/cards.ts in sly-shop.
+const CARD_BADGE = { label: 'Card', color: 'bg-amber-100 text-amber-700' };
+
+export function sourceBadge(source) {
+  if (!source) return null;
+  if (source.startsWith('carte-')) return CARD_BADGE;
+  return SOURCE_BADGE[source] || null;
+}
+
 export const VALUE_TIERS = {
   platinum: { label: 'Platinum', min: 5000, color: 'bg-slate-200 text-slate-700',   dot: '#64748B' },
   gold:     { label: 'Gold',     min: 2000, color: 'bg-amber-100 text-amber-800',   dot: '#D69E2E' },

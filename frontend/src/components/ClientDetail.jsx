@@ -4,6 +4,7 @@ import {
   TIMING, POTENTIAL, MESSAGE_TYPES, STAGE_PREREQ, STAGE_META,
   BODY_MEASUREMENT_LABELS, FINAL_JACKET_LABELS, FINAL_PANT_LABELS,
   CONTACT_TYPE_BADGE,
+  sourceBadge,
   fmtDate, fmtMoney, initials, effectiveTiming, todayISO, todayPlusMonths, daysUntil,
 } from '../labels.js';
 
@@ -389,6 +390,11 @@ export default function ClientDetail({ clientId, onClose, onSaved, onDeleted, on
             {!isNew && CONTACT_TYPE_BADGE[form.contact_type] && (
               <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${CONTACT_TYPE_BADGE[form.contact_type].color}`}>
                 {CONTACT_TYPE_BADGE[form.contact_type].label}
+              </span>
+            )}
+            {!isNew && sourceBadge(form.source) && (
+              <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${sourceBadge(form.source).color}`}>
+                {sourceBadge(form.source).label}
               </span>
             )}
           </div>

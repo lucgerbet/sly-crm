@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api.js';
 import { chainFor, urgency, THRESHOLDS } from './Orders.jsx';
-import { TIMING, POTENTIAL, fmtMoney, fmtDate, daysUntil, initials } from '../labels.js';
+import { TIMING, POTENTIAL, sourceBadge, fmtMoney, fmtDate, daysUntil, initials } from '../labels.js';
 
 function ProgressRing({ value, target, size = 64 }) {
   const pct = target > 0 ? Math.min(100, (value / target) * 100) : 0;
@@ -37,7 +37,7 @@ function ClientRow({ c, onSelect, action, onAction, busy }) {
       <div className="flex-1 min-w-0 cursor-pointer" onClick={() => onSelect(c.id)}>
         <div className="text-sm font-medium truncate">{name}</div>
         <div className="text-[11px] text-ink-secondary truncate">
-          {[c.city, c.source].filter(Boolean).join(' · ') || '—'} · {fmtMoney(c.lifetime_value ?? c.ca_lifetime)}
+          {[c.city, sourceBadge(c.source)?.label || c.source].filter(Boolean).join(' · ') || '—'} · {fmtMoney(c.lifetime_value ?? c.ca_lifetime)}
         </div>
       </div>
       {potCfg && (
