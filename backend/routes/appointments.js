@@ -19,10 +19,15 @@ const router = Router();
 // the zero-schema-change upgrade path to a real Calendly webhook later.
 router.post('/from-widget', requireIntakeSecret, async (req, res) => {
   try {
-    const { stripeCheckoutSessionId, calendlyEventUri } = req.body || {};
+    // orderId is the correlation key for a "SLY Experience" gift redemption
+    // (see routes/giftCards.js /:code/redeem) — that order was never paid
+    // through a Stripe Checkout session on sly-shop, so there is no
+    // stripeCheckoutSessionId to look it up by. Either key works; exactly
+    // one is expected per call.
+    const { stripeCheckoutSessionId, orderId, calendlyEventUri } = req.body || {};
     let { startTime, endTime, location } = req.body || {};
-    if (!stripeCheckoutSessionId || (!startTime && !calendlyEventUri)) {
-      return res.status(400).json({ error: 'stripeCheckoutSessionId and (startTime or calendlyEventUri) are required' });
+    if ((!stripeCheckoutSessionId && !orderId) || (!startTime && !calendlyEventUri)) {
+      return res.status(400).json({ error: '(stripeCheckoutSessionId or orderId) and (startTime or calendlyEventUri) are required' });
     }
 
     // Calendly's `event_scheduled` postMessage never carries the actual
@@ -38,8 +43,10 @@ router.post('/from-widget', requireIntakeSecret, async (req, res) => {
       location = resolved.location;
     }
 
-    const order = db.prepare('SELECT * FROM orders WHERE stripe_checkout_session_id = ?').get(stripeCheckoutSessionId);
-    if (!order) return res.status(404).json({ error: 'No staged order for this checkout session' });
+    const order = stripeCheckoutSessionId
+      ? db.prepare('SELECT * FROM orders WHERE stripe_checkout_session_id = ?').get(stripeCheckoutSessionId)
+      : db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId);
+    if (!order) return res.status(404).json({ error: 'No staged order for this checkout session or orderId' });
 
     let appointment = calendlyEventUri
       ? db.prepare('SELECT * FROM appointments WHERE calendly_event_uri = ?').get(calendlyEventUri)

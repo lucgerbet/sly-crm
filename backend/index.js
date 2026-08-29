@@ -23,6 +23,7 @@ import webhooksRouter from './routes/webhooks.js';
 import appointmentsRouter from './routes/appointments.js';
 import leadsRouter from './routes/leads.js';
 import analyticsRouter from './routes/analytics.js';
+import giftCardsRouter from './routes/giftCards.js';
 import { runBirthdayAutomation } from './lib/birthdayJob.js';
 import { runAppointmentReminderJob } from './lib/appointmentReminderJob.js';
 import { runBalanceReminderJob } from './lib/balanceReminderJob.js';
@@ -86,6 +87,7 @@ app.use('/api/webhooks', webhooksRouter);
 app.use('/api/orders', ordersRouter);
 app.use('/api/leads', leadsRouter);
 app.use('/api/appointments', appointmentsRouter);
+app.use('/api/gift-cards', giftCardsRouter);
 // /api/analytics/track is also public at the Traefik level (see docker-compose.yml)
 // and re-checks SLY_INTAKE_SECRET itself, same pattern as the routers above.
 // /api/analytics/summary stays behind Traefik's default Basic Auth router.

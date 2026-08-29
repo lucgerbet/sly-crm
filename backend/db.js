@@ -551,6 +551,45 @@ export function migrate() {
       FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE,
       FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE CASCADE
     );
+
+    -- "The SLY Experience" gift offer (2026-08-30): the buyer pays for a pack
+    -- up front but never books — the beneficiary does, later, with this row's
+    -- unique code column as their proof of payment. Deliberately its own table
+    -- rather than an order from the start: an order needs a client (the
+    -- buyer isn't necessarily ever a client) and represents one piece being
+    -- made, while a gift card represents a sale that may or may not ever be
+    -- redeemed, by someone whose identity is unknown at purchase time.
+    CREATE TABLE IF NOT EXISTS gift_cards (
+      id TEXT PRIMARY KEY,
+      code TEXT NOT NULL,               -- short, URL-safe — the QR code target
+      pack_key TEXT NOT NULL,           -- products.key: pack_suit_shirt | pack_suit_3shirts | pack_suit_5shirts
+      price_paid_cents INTEGER NOT NULL,
+
+      stripe_checkout_session_id TEXT UNIQUE,
+
+      buyer_first_name TEXT,
+      buyer_last_name TEXT,
+      buyer_email TEXT NOT NULL,
+
+      beneficiary_name TEXT,   -- personalization only ("à l'attention de ...") — not a client record
+      gift_message TEXT,
+
+      -- Collected so Luc can also post a printed card by hand later — no
+      -- automated fulfillment, this is just where the address lives.
+      mailing_address TEXT,
+      mailing_city TEXT,
+      mailing_zip TEXT,
+
+      status TEXT NOT NULL DEFAULT 'pending', -- pending (Stripe session open) | active (paid, unredeemed) | redeemed
+      expires_at TEXT,     -- set once active — 12 months from payment
+      redeemed_at TEXT,
+      redeemed_order_id TEXT,
+
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now')),
+
+      FOREIGN KEY (redeemed_order_id) REFERENCES orders(id) ON DELETE SET NULL
+    );
   `);
 
   db.exec(`
@@ -595,12 +634,22 @@ export function migrate() {
     -- The follow-up pipeline query: who has an event coming up, soonest first.
     CREATE INDEX IF NOT EXISTS idx_clients_next_event ON clients(next_event_date);
     CREATE INDEX IF NOT EXISTS idx_clients_sector ON clients(sector);
+    -- Looked up on every redemption-page visit and every configurator load
+    -- carrying a ?giftCode=.
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_gift_cards_code ON gift_cards(code);
+    CREATE INDEX IF NOT EXISTS idx_gift_cards_status ON gift_cards(status);
   `);
 
   // Added here, not in the addColumn block far above: that block runs before
   // order_alterations exists, so the ALTER silently failed and every
   // alteration read as costing nothing.
   addColumn('order_alterations', 'cost_cents', 'INTEGER');
+
+  // Links a redeemed gift's resulting order back to the gift_cards row that
+  // paid for it — added post-creation like the other late columns above
+  // (gift_cards itself is created after orders, so it couldn't be a FK in
+  // the original CREATE TABLE).
+  addColumn('orders', 'gift_card_id', 'TEXT');
 
   // Seed default goal settings (only if absent) — SLY starts from zero, so
   // these are placeholders meant to be edited once real targets are known.
@@ -858,6 +907,23 @@ export function migrate() {
   // Random per-install salt for the daily-rotating visitor_hash in
   // page_views (see routes/analytics.js) — never exposed via any API route.
   seed.run('analytics_hash_salt', randomBytes(24).toString('hex'));
+
+  // "The SLY Experience" gift offer (2026-08-30). Sent to the BUYER — they're
+  // the one who presents the card to whoever they're gifting it to, so they
+  // need it in hand, not the (often still-unknown-at-purchase) beneficiary.
+  // {{qr_code_cid}} isn't a template variable substituted here — it's a
+  // marker the HTML builder (routes/webhooks.js) replaces with the actual
+  // embedded QR image, kept out of renderTemplate's plain {{key}} scheme on
+  // purpose since it's markup, not text.
+  seed.run('gift_purchased_subject', 'Votre SLY Experience est prête à offrir — {{beneficiary_name}}');
+  seed.run('gift_purchased_body',
+    "Merci pour votre commande !\n\nVotre SLY Experience ({{pack_label}}, {{price_paid}}) est prête. Faites scanner le QR code de cette carte à la personne à qui vous l'offrez — {{beneficiary_name}} — pour qu'elle puisse choisir son style et réserver son rendez-vous avec Luc, sans rien avoir à payer.\n\nCette carte est valable jusqu'au {{expires_at}}.\n\nLien direct si le QR code ne s'affiche pas : {{redeem_url}}");
+  seed.run('internal_gift_purchased_subject', 'SLY Experience vendue — {{buyer_first_name}} {{buyer_last_name}}');
+  seed.run('internal_gift_purchased_body',
+    "Nouvelle SLY Experience achetée.\n\nAcheteur : {{buyer_first_name}} {{buyer_last_name}} ({{buyer_email}})\nPack : {{pack_label}} — {{price_paid}}\nÀ l'attention de : {{beneficiary_name}}\nCode : {{code}}\n\nVoir la fiche dans le CRM pour le détail (adresse postale si fournie pour l'envoi d'une carte imprimée).");
+  seed.run('internal_gift_redeemed_subject', 'SLY Experience utilisée — {{first_name}} {{last_name}}');
+  seed.run('internal_gift_redeemed_body',
+    "Une carte SLY Experience vient d'être utilisée.\n\nBénéficiaire : {{first_name}} {{last_name}} ({{email}})\nPack : {{pack_label}}\nCommande : {{order_reference}}\n\nDéjà entièrement réglé — rien à encaisser, rendez-vous à honorer normalement.");
 }
 
 export default db;

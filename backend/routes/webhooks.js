@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { randomUUID, randomBytes } from 'node:crypto';
+import QRCode from 'qrcode';
 import db from '../db.js';
 import { verifyWebhookSignature } from '../lib/stripe.js';
 import { buildThankYouEmail } from '../lib/balanceEmails.js';
@@ -7,8 +8,34 @@ import { sendEmail, renderTemplate, wrapHtml } from '../lib/email.js';
 import { getSettings } from './settings.js';
 import { formatMoney, logMessage, productLabel } from '../lib/orderHelpers.js';
 import { extractFathomFields, matchFathomCall, storeFathomCall, verifyFathomSignature } from '../lib/fathom.js';
+import { redeemUrl } from './giftCards.js';
 
 const router = Router();
+
+function escapeHtml(str) {
+  return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+// Bespoke HTML rather than the generic wrapHtml() text wrapper (like
+// workshopEmailHtml in routes/orders.js) — this is the one email in the
+// system that needs to embed an image, the QR code the beneficiary scans.
+// A base64 data: URI rather than a Resend attachment + cid: reference:
+// simpler, and every mainstream client (Gmail, Apple Mail, Outlook web)
+// renders a QR-sized data URI fine.
+function giftCardEmailHtml({ text, qrDataUrl, redeemUrl }) {
+  const paragraphs = escapeHtml(text)
+    .split('\n\n')
+    .filter((p) => p.trim())
+    .map((p) => `<p style="margin:0 0 16px;white-space:pre-line;">${p}</p>`)
+    .join('');
+  return `<div style="font-family:sans-serif;max-width:480px;color:#1A1A1A;line-height:1.5;">
+    ${paragraphs}
+    <div style="text-align:center;margin:24px 0;padding:24px;border:1px solid #e5e0da;">
+      <img src="${qrDataUrl}" width="220" height="220" alt="QR code SLY Experience" style="display:block;margin:0 auto 16px;" />
+      <a href="${redeemUrl}" style="background:#1A1A1A;color:#fff;padding:12px 24px;text-decoration:none;font-weight:500;display:inline-block;">Voir la carte cadeau</a>
+    </div>
+  </div>`;
+}
 
 // Mounted with express.raw() in index.js — req.body here is the raw Buffer
 // Stripe's signature check requires, NOT JSON-parsed. See the raw-body
@@ -218,6 +245,68 @@ router.post('/stripe', async (req, res) => {
           }
         } catch (e) {
           console.error('[stripe-webhook] balance-received notification failed (non-fatal):', e.message);
+        }
+      }
+    }
+
+    // "The SLY Experience" gift purchase (2026-08-30) — the buyer just paid
+    // in full for a pack; there's no order yet (no client, no config) and
+    // nothing to book. What happens here is entirely about handing the buyer
+    // a usable, redeemable card: activate it, generate the QR-carrying email.
+    // The actual order only gets created later, at redemption time, by
+    // POST /api/gift-cards/:code/redeem.
+    if (kind === 'gift') {
+      const card = db.prepare('SELECT * FROM gift_cards WHERE stripe_checkout_session_id = ?').get(session.id);
+      if (!card) {
+        console.error(`[stripe-webhook] gift checkout.session.completed for unknown session ${session.id} — no gift card was staged via /api/gift-cards/intake`);
+      } else if (card.status === 'pending') {
+        const expiresAt = new Date();
+        expiresAt.setMonth(expiresAt.getMonth() + 12);
+        db.prepare(`
+          UPDATE gift_cards SET status = 'active', expires_at = ?, updated_at = datetime('now')
+          WHERE id = ?
+        `).run(expiresAt.toISOString(), card.id);
+        logMessage(null, 'gift_purchased', `SLY Experience purchased (${card.pack_key}) — code ${card.code}`);
+
+        try {
+          const settings = getSettings();
+          const url = redeemUrl(card.code);
+          const qrDataUrl = await QRCode.toDataURL(url, { width: 320, margin: 1 });
+          const vars = {
+            beneficiary_name: card.beneficiary_name || 'votre invité(e)',
+            pack_label: productLabel(card.pack_key),
+            price_paid: formatMoney(card.price_paid_cents, settings.currency),
+            expires_at: new Date(expiresAt).toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' }),
+            redeem_url: url,
+          };
+          const subject = renderTemplate(settings.gift_purchased_subject, vars);
+          const text = renderTemplate(settings.gift_purchased_body, vars);
+          const html = giftCardEmailHtml({ text, qrDataUrl, redeemUrl: url });
+          if (card.buyer_email) {
+            await sendEmail({ to: card.buyer_email, subject, text, html });
+          }
+        } catch (e) {
+          console.error('[stripe-webhook] gift card email failed (non-fatal):', e.message);
+        }
+
+        try {
+          const settings = getSettings();
+          const vars = {
+            buyer_first_name: card.buyer_first_name || '',
+            buyer_last_name: card.buyer_last_name || '',
+            buyer_email: card.buyer_email || '',
+            pack_label: productLabel(card.pack_key),
+            price_paid: formatMoney(card.price_paid_cents, settings.currency),
+            beneficiary_name: card.beneficiary_name || '',
+            code: card.code,
+          };
+          const subject = renderTemplate(settings.internal_gift_purchased_subject, vars);
+          const text = renderTemplate(settings.internal_gift_purchased_body, vars);
+          if (settings.internal_notify_email) {
+            await sendEmail({ to: settings.internal_notify_email, subject, text, html: wrapHtml(text) });
+          }
+        } catch (e) {
+          console.error('[stripe-webhook] gift-purchased internal notification failed (non-fatal):', e.message);
         }
       }
     }

@@ -108,11 +108,18 @@ export function nextOrderNumber() {
 
 // Mirrors sly-shop's src/lib/pricing.ts PRICES labels — kept as a small
 // duplicated map rather than a cross-repo import (sly-shop is a separate
-// Vercel deployment); update both sides if product types ever change.
+// Vercel deployment); update both sides if product types ever change. The
+// three pack_* keys are what a redeemed "SLY Experience" gift order carries
+// as product_type (see routes/giftCards.js) — same keys as the products
+// table's catalogue rows.
 export const PRODUCT_LABELS = {
   suit: 'Costume Deux Pièces',
   blazer: 'Blazer sur mesure',
   trousers: 'Pantalon sur mesure',
+  shirt: 'Chemise sur mesure',
+  pack_suit_shirt: 'SLY Experience — Costume + 1 chemise',
+  pack_suit_3shirts: 'SLY Experience — Costume + 3 chemises',
+  pack_suit_5shirts: 'SLY Experience — Costume + 5 chemises',
 };
 
 export function productLabel(type) {
