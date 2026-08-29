@@ -17,7 +17,8 @@ export function requireIntakeSecret(req, res, next) {
 
 // Find a client by case-insensitive email match, or create one. Never
 // overwrites fields a human may have already edited in the CRM (tags,
-// notes, assigned_to, potential) — only fills identity fields if blank, and
+// notes, assigned_to, potential) — only fills identity fields if blank (`phone`
+// included: a number the client corrected by hand is never overwritten), and
 // only stamps `source` on brand-new clients so a repeat shop customer who
 // was manually tagged/assigned doesn't get clobbered by every new order.
 //
@@ -28,7 +29,7 @@ export function requireIntakeSecret(req, res, next) {
 // replace (e.g. "Anne Sophie Dupont" would become first="Anne",
 // last="Sophie Dupont"). Prefer firstName/lastName whenever you control the
 // caller.
-export function findOrCreateClient({ name, firstName, lastName, email, source, referredBy }) {
+export function findOrCreateClient({ name, firstName, lastName, email, phone, source, referredBy }) {
   let first_name = (firstName || '').trim();
   let last_name = (lastName || '').trim();
   if (!first_name && !last_name && name) {
@@ -43,6 +44,7 @@ export function findOrCreateClient({ name, firstName, lastName, email, source, r
     const values = [];
     if (!existing.first_name && first_name) { setClauses.push('first_name = ?'); values.push(first_name); }
     if (!existing.last_name && last_name) { setClauses.push('last_name = ?'); values.push(last_name); }
+    if (!existing.phone && phone) { setClauses.push('phone = ?'); values.push(phone); }
     if (!existing.referred_by && referredBy) { setClauses.push('referred_by = ?'); values.push(referredBy); }
     if (setClauses.length) {
       setClauses.push("updated_at = datetime('now')");
@@ -54,9 +56,9 @@ export function findOrCreateClient({ name, firstName, lastName, email, source, r
 
   const id = randomUUID();
   db.prepare(`
-    INSERT INTO clients (id, first_name, last_name, email, source, referred_by)
-    VALUES (?, ?, ?, ?, ?, ?)
-  `).run(id, first_name, last_name, email || '', source || '', referredBy || '');
+    INSERT INTO clients (id, first_name, last_name, email, phone, source, referred_by)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `).run(id, first_name, last_name, email || '', phone || '', source || '', referredBy || '');
   return db.prepare('SELECT * FROM clients WHERE id = ?').get(id);
 }
 
