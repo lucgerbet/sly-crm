@@ -4,15 +4,24 @@ export function isEmailConfigured() {
   return !!process.env.RESEND_API_KEY;
 }
 
-// { to, subject, text, html? } -> { ok, id?, error? }
-// `html` is optional — existing callers passing only `text` are unaffected.
-export async function sendEmail({ to, subject, text, html }) {
+// { to, subject, text, html?, attachments?, cc? } -> { ok, id?, error? }
+// `html`/`attachments`/`cc` are optional — existing callers passing none of
+// them are unaffected. `attachments`: [{ filename, content: Buffer }]. `cc`:
+// string or string[] — e.g. so Luc gets his own copy of a client-facing
+// email (order recap) without a second near-duplicate send.
+export async function sendEmail({ to, subject, text, html, attachments, cc }) {
   if (!isEmailConfigured()) {
     return { ok: false, error: 'RESEND_API_KEY not configured' };
   }
   const from = process.env.EMAIL_FROM || 'SLY <onboarding@resend.dev>';
 
-  const res = await fetch('https://api.resend.com/emails', {
+  // Overridable so tests can point at a local recorder and assert which
+  // emails actually fire — otherwise every send is invisible and rules like
+  // "only alert when the client really needs a tape" can't be proven.
+  // Unset in every real environment, which keeps the default in force.
+  const endpoint = process.env.RESEND_API_URL || 'https://api.resend.com/emails';
+
+  const res = await fetch(endpoint, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
@@ -24,6 +33,13 @@ export async function sendEmail({ to, subject, text, html }) {
       subject,
       text,
       ...(html ? { html } : {}),
+      ...(cc ? { cc: Array.isArray(cc) ? cc : [cc] } : {}),
+      ...(attachments?.length ? {
+        attachments: attachments.map((a) => ({
+          filename: a.filename,
+          content: Buffer.isBuffer(a.content) ? a.content.toString('base64') : a.content,
+        })),
+      } : {}),
     }),
   });
 
@@ -52,6 +68,7 @@ function escapeHtml(str) {
 export function wrapHtml(bodyText, { ctaUrl, ctaLabel } = {}) {
   const paragraphs = escapeHtml(bodyText)
     .split('\n\n')
+    .filter(p => p.trim())
     .map(p => `<p style="margin:0 0 16px;white-space:pre-line;">${p}</p>`)
     .join('');
   const cta = ctaUrl

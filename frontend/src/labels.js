@@ -35,6 +35,15 @@ export const MESSAGE_TYPES = {
   sale:        { label: 'Sale',          color: 'border-violet-200 bg-violet-50', text: 'text-violet-700' },
   birthday_reminder: { label: 'Birthday reminder (auto)', color: 'border-pink-200 bg-pink-50', text: 'text-pink-700' },
   birthday_greeting: { label: 'Birthday greeting (auto)', color: 'border-pink-200 bg-pink-50', text: 'text-pink-700' },
+  call_transcript: { label: 'Call recap (Fathom)', color: 'border-teal-200 bg-teal-50', text: 'text-teal-700' },
+  // Written by the backend (see logMessage calls). Without an entry here they
+  // all fell back to the grey "Note" style, which made the order emails
+  // impossible to pick out of an activity log.
+  order_intake:        { label: 'Order placed',        color: 'border-violet-200 bg-violet-50', text: 'text-violet-700' },
+  deposit_paid:        { label: 'Deposit paid',        color: 'border-green-200 bg-green-50',   text: 'text-green-700'  },
+  order_finalized:     { label: 'Recap email sent',    color: 'border-blue-200 bg-blue-50',     text: 'text-blue-700'   },
+  balance_paid:        { label: 'Balance paid',        color: 'border-green-200 bg-green-50',   text: 'text-green-800'  },
+  appointment_reminder:{ label: 'Meeting reminder (auto)', color: 'border-orange-200 bg-orange-50', text: 'text-orange-700' },
 };
 
 // Compute effective timing bucket from a target contact date (mirrors backend)
@@ -66,6 +75,23 @@ export function todayISO() {
 
 // Lifetime-value tiers — generic thresholds for a brand starting from zero.
 // Keep ranges in sync with backend routes/clients.js VALUE_TIER_SQL.
+// contact_type is computed server-side (routes/clients.js CONTACT_TYPE) —
+// 'client' = at least one paid-deposit order, full stop. 'prospect_physical'
+// is a manual flag (email collected in person, hand-entered by Luc);
+// 'prospect_online' is the default for anyone who only ever gave an email
+// through the website (lead capture or an unpaid checkout).
+export const CONTACT_TYPE_OPTS = [
+  ['', 'All categories'],
+  ['prospect_online', 'Prospect'],
+  ['prospect_physical', 'Prospect (physique)'],
+  ['client', 'Client'],
+];
+export const CONTACT_TYPE_BADGE = {
+  client: { label: 'Client', color: 'bg-green-100 text-green-800' },
+  prospect_physical: { label: 'Prospect physique', color: 'bg-amber-100 text-amber-700' },
+  prospect_online: { label: 'Prospect', color: 'bg-gray-100 text-gray-600' },
+};
+
 export const VALUE_TIERS = {
   platinum: { label: 'Platinum', min: 5000, color: 'bg-slate-200 text-slate-700',   dot: '#64748B' },
   gold:     { label: 'Gold',     min: 2000, color: 'bg-amber-100 text-amber-800',   dot: '#D69E2E' },
@@ -108,3 +134,24 @@ export function fmtMoneyShort(n, currency = '€') {
 export function initials(first, last) {
   return [(first || '').charAt(0), (last || '').charAt(0)].join('').toUpperCase() || '?';
 }
+
+// Same field keys as sly-crm/backend/lib/pdf.js's BODY_MEASUREMENT_ROWS /
+// JACKET_MEASUREMENT_ROWS / TROUSER_MEASUREMENT_ROWS (EN labels only —
+// this admin UI is English-labeled, unlike the bilingual CN/EN workshop PDF).
+export const BODY_MEASUREMENT_LABELS = {
+  shoulder: 'Shoulder', chest: 'Chest', waistJacket: 'Waist (jacket)', stomach: 'Stomach',
+  hips: 'Hips', biceps: 'Biceps', forearm: 'Forearm', wrist: 'Wrist', armHole: 'Armhole',
+  neck: 'Neck', waistPant: 'Waist (trousers)', sideNeckPointToUpperHips: 'Side neck to upper hip',
+  thigh: 'Thigh', knee: 'Knee', calf: 'Calf', ankle: 'Ankle',
+};
+
+export const FINAL_JACKET_LABELS = {
+  shoulder: 'Shoulder', sleeveLength: 'Sleeve', lengthFront: 'Length (front)', lengthBack: 'Length (back)',
+  chest: 'Bust', waist: 'Waist', stomach: 'Stomach', hips: 'Hips',
+  armWidth: 'Arm width', armHole: 'Arm hole', sleeveOpening: 'Sleeve opening',
+};
+
+export const FINAL_PANT_LABELS = {
+  length: 'Length', waist: 'Waist', hip: 'Hip', thigh: 'Thigh', knee: 'Knee',
+  wholeCrotch: 'Whole crotch', calf: 'Calf', cuffOpening: 'Cuff opening',
+};

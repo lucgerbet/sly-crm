@@ -24,10 +24,22 @@ services:
       # only these path prefixes skip auth; everything else stays protected.
       # NOTE: Traefik only strips Basic Auth here — it is NOT the real security
       # boundary for the new routes. /api/webhooks/stripe verifies Stripe's
-      # signature; /api/orders/* and /api/appointments/from-widget check a
-      # bearer SLY_INTAKE_SECRET — both inside Express (see lib/orderHelpers.js
-      # and lib/stripe.js).
-      - "traefik.http.routers.slycrm-public.rule=Host(`sly-crm.srv1758374.hstgr.cloud`) && (PathPrefix(`/api/unsubscribe`) || PathPrefix(`/api/webhooks`) || PathPrefix(`/api/orders/intake`) || PathPrefix(`/api/orders/finalize`) || PathPrefix(`/api/appointments/from-widget`))"
+      # signature; /api/orders/*, /api/appointments/from-widget,
+      # /api/leads/capture, and /api/analytics/track check a bearer
+      # SLY_INTAKE_SECRET — all inside Express (see lib/orderHelpers.js and
+      # lib/stripe.js). /api/analytics/summary is deliberately NOT listed
+      # here — it stays behind Basic Auth like the rest of the human-facing CRM.
+      # `/api/clients/set-` covers set-address / set-measurements / set-profile
+      # in one prefix: listing them individually already silently broke
+      # set-measurements once (added to Express but not here, so every call
+      # 401'd at the edge and measurements never reached the CRM). Every
+      # `set-*` client route is secret-gated in Express and narrow by design,
+      # so the shared prefix is safe and stops that failure recurring.
+      # `/survey` is the one page a CLIENT ever opens (satisfaction form sent
+      # with the payment confirmation). It has to skip Basic Auth — a client
+      # has no account — and is guarded instead by the unguessable per-order
+      # token in the URL, checked in routes/survey.js.
+      - "traefik.http.routers.slycrm-public.rule=Host(`sly-crm.srv1758374.hstgr.cloud`) && (PathPrefix(`/survey`) || PathPrefix(`/workshop`) || PathPrefix(`/api/unsubscribe`) || PathPrefix(`/api/webhooks`) || PathPrefix(`/api/orders/intake`) || PathPrefix(`/api/orders/finalize`) || PathPrefix(`/api/orders/search`) || PathPrefix(`/api/orders/upcoming-meetings`) || PathPrefix(`/api/orders/send-to-workshop`) || PathPrefix(`/api/orders/feedback`) || PathPrefix(`/api/clients/set-`) || PathPrefix(`/api/clients/lookup`) || PathPrefix(`/api/sizes/lookup`) || PathPrefix(`/api/appointments/from-widget`) || PathPrefix(`/api/leads/capture`) || PathPrefix(`/api/analytics/track`))"
       - traefik.http.routers.slycrm-public.entrypoints=websecure
       - traefik.http.routers.slycrm-public.tls.certresolver=letsencrypt
       - traefik.http.routers.slycrm-public.service=slycrm-public

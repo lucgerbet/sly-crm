@@ -20,15 +20,30 @@ export function requireIntakeSecret(req, res, next) {
 // notes, assigned_to, potential) — only fills identity fields if blank, and
 // only stamps `source` on brand-new clients so a repeat shop customer who
 // was manually tagged/assigned doesn't get clobbered by every new order.
-export function findOrCreateClient({ name, email, source }) {
+//
+// Callers should send `firstName`/`lastName` directly now that sly-shop
+// collects them as separate fields — `name` (a single combined string) is
+// kept only as a fallback for any older/other caller, naively split on the
+// first space, which is exactly the fragile guessing this was meant to
+// replace (e.g. "Anne Sophie Dupont" would become first="Anne",
+// last="Sophie Dupont"). Prefer firstName/lastName whenever you control the
+// caller.
+export function findOrCreateClient({ name, firstName, lastName, email, source, referredBy }) {
+  let first_name = (firstName || '').trim();
+  let last_name = (lastName || '').trim();
+  if (!first_name && !last_name && name) {
+    const [f, ...rest] = name.trim().split(/\s+/);
+    first_name = f || '';
+    last_name = rest.join(' ');
+  }
+
   const existing = db.prepare('SELECT * FROM clients WHERE lower(email) = lower(?)').get(email);
   if (existing) {
-    const [first_name, ...rest] = (name || '').trim().split(/\s+/);
-    const last_name = rest.join(' ');
     const setClauses = [];
     const values = [];
     if (!existing.first_name && first_name) { setClauses.push('first_name = ?'); values.push(first_name); }
     if (!existing.last_name && last_name) { setClauses.push('last_name = ?'); values.push(last_name); }
+    if (!existing.referred_by && referredBy) { setClauses.push('referred_by = ?'); values.push(referredBy); }
     if (setClauses.length) {
       setClauses.push("updated_at = datetime('now')");
       values.push(existing.id);
@@ -37,19 +52,26 @@ export function findOrCreateClient({ name, email, source }) {
     return db.prepare('SELECT * FROM clients WHERE id = ?').get(existing.id);
   }
 
-  const [first_name, ...rest] = (name || '').trim().split(/\s+/);
-  const last_name = rest.join(' ');
   const id = randomUUID();
   db.prepare(`
-    INSERT INTO clients (id, first_name, last_name, email, source)
-    VALUES (?, ?, ?, ?, ?)
-  `).run(id, first_name || '', last_name || '', email || '', source || '');
+    INSERT INTO clients (id, first_name, last_name, email, source, referred_by)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `).run(id, first_name, last_name, email || '', source || '', referredBy || '');
   return db.prepare('SELECT * FROM clients WHERE id = ?').get(id);
 }
 
+// French convention: amount first, non-breaking space, then the symbol —
+// "375,00 €", not "€ 375.00". Every caller is client- or workshop-facing and
+// French (order emails, the invoice, the production docket), so the locale
+// belongs here rather than at each call site. The CRM's own admin UI has its
+// own formatter in frontend/src/labels.js and is unaffected.
 export function formatMoney(cents, currency = '€') {
   if (cents == null) return '—';
-  return `${currency} ${(cents / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const amount = (cents / 100).toLocaleString('fr-FR', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+  return `${amount} ${currency}`;
 }
 
 // Turns the ~30-field shop Config object into a readable "Label: value" block
@@ -100,13 +122,38 @@ export function productLabel(type) {
 // Formats an ISO UTC instant for display in emails, in the shop's operating
 // timezone (matches TZ=Europe/Paris already set in docker-compose.yml).
 export function formatAppointmentDate(startsAt) {
-  return new Date(startsAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric', timeZone: 'Europe/Paris' });
+  return new Date(startsAt).toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric', timeZone: 'Europe/Paris' });
 }
 export function formatAppointmentTime(startsAt) {
-  return new Date(startsAt).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Paris', timeZoneName: 'short' });
+  return new Date(startsAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Paris', timeZoneName: 'short' });
 }
 
 export function logMessage(clientId, type, content) {
   db.prepare('INSERT INTO messages (id, client_id, type, content, date) VALUES (?, ?, ?, ?, ?)')
     .run(randomUUID(), clientId, type, content, new Date().toISOString());
+}
+
+// Shared by POST /api/clients/set-measurements (fires as soon as the
+// Measurements step is filled in, in the stylist tool) and /orders/finalize
+// (a later, best-effort second write) — same snapshot shape, one place to
+// keep them from drifting apart. Returns false without writing if there's no
+// actual measurement data (an empty/all-blank call is a no-op, not a wipe).
+export function snapshotClientMeasurements(clientId, orderId, measurements) {
+  const m = measurements || {};
+  const hasData = ['bodyMeasurements', 'finalJacket', 'finalPant']
+    .some((k) => m[k] && Object.values(m[k]).some(Boolean));
+  if (!hasData) return false;
+
+  const snapshot = {
+    measurementApproach: m.measurementApproach || null,
+    fitPreference: m.fitPreference || null,
+    bodyMeasurements: m.bodyMeasurements || {},
+    finalJacket: m.finalJacket || {},
+    finalPant: m.finalPant || {},
+  };
+  db.prepare(`
+    UPDATE clients SET measurements_json = ?, measurements_updated_at = datetime('now'), measurements_order_id = ?
+    WHERE id = ?
+  `).run(JSON.stringify(snapshot), orderId || null, clientId);
+  return true;
 }

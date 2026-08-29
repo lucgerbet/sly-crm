@@ -21,6 +21,14 @@ export function verifyWebhookSignature(rawBody, signatureHeader) {
   );
 }
 
+// Deactivates a Payment Link so it stops accepting payments — Stripe shows
+// the visitor a "this link is no longer active" page instead. Used when a
+// stylist corrects an order's price after the first balance link already
+// went out: the old link must never be payable again at the wrong amount.
+export async function deactivatePaymentLink(paymentLinkId) {
+  await stripeClient().paymentLinks.update(paymentLinkId, { active: false });
+}
+
 // Creates a single-line-item Payment Link for an order balance. `metadata`
 // propagates onto the resulting Checkout Session, which is how the webhook
 // handler (routes/webhooks.js) tells a balance payment apart from a deposit.

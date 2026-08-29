@@ -3,14 +3,23 @@ import Dashboard from './components/Dashboard.jsx';
 import ClientList from './components/ClientList.jsx';
 import ClientDetail from './components/ClientDetail.jsx';
 import Daily from './components/Daily.jsx';
+import Orders from './components/Orders.jsx';
 import Reports from './components/Reports.jsx';
 import Automation from './components/Automation.jsx';
+import Analytics from './components/Analytics.jsx';
+import SizeChart from './components/SizeChart.jsx';
+import Products from './components/Products.jsx';
 
 const TABS = [
   { id: 'dashboard', label: 'Dashboard' },
   { id: 'daily',     label: 'My Day'    },
   { id: 'clients',   label: 'Clients'   },
+  { id: 'prospects', label: 'Prospects' },
+  { id: 'orders',    label: 'Orders'    },
   { id: 'reports',   label: 'Reports'   },
+  { id: 'analytics', label: 'Analytics' },
+  { id: 'products',  label: 'Produits'  },
+  { id: 'sizes',     label: 'Size chart' },
   { id: 'automation', label: 'Automation' },
 ];
 
@@ -107,8 +116,19 @@ export default function App() {
 
       <main className="max-w-7xl mx-auto px-6 py-6">
         {view === 'dashboard' && <Dashboard key={`dash-${refreshKey}`} goTo={goTo} />}
+        {view === 'products' && <Products key={`products-${refreshKey}`} notify={notify} />}
+        {view === 'sizes' && <SizeChart key={`sizes-${refreshKey}`} notify={notify} />}
         {view === 'daily' && (
           <Daily key={`daily-${refreshKey}`} notify={notify} onSelect={id => openPanel(id)} onChanged={refresh} />
+        )}
+        {view === 'prospects' && (
+          <ClientList
+            key={`prospects-${refreshKey}`}
+            mode="prospects"
+            onSelect={id => openPanel(id)}
+            onNew={() => openPanel(null)}
+            notify={notify}
+          />
         )}
         {view === 'clients' && (
           <ClientList
@@ -119,7 +139,11 @@ export default function App() {
             notify={notify}
           />
         )}
+        {view === 'orders' && (
+          <Orders key={`orders-${refreshKey}`} notify={notify} onSelectClient={id => openPanel(id)} />
+        )}
         {view === 'reports' && <Reports key={`rep-${refreshKey}`} />}
+        {view === 'analytics' && <Analytics key={`analytics-${refreshKey}`} />}
         {view === 'automation' && <Automation key={`auto-${refreshKey}`} notify={notify} />}
       </main>
 

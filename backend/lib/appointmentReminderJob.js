@@ -1,6 +1,6 @@
 import db from '../db.js';
 import { getSettings } from '../routes/settings.js';
-import { sendEmail, isEmailConfigured, renderTemplate } from './email.js';
+import { sendEmail, isEmailConfigured, renderTemplate, wrapHtml } from './email.js';
 import { productLabel, formatAppointmentDate, formatAppointmentTime, logMessage } from './orderHelpers.js';
 
 // Runs every 15 minutes (see index.js cron schedule). The window is
@@ -35,13 +35,14 @@ export async function runAppointmentReminderJob({ dryRun = false } = {}) {
       appointment_date: formatAppointmentDate(appt.starts_at),
       appointment_time: formatAppointmentTime(appt.starts_at),
       appointment_location: appt.location || '',
+      signature: settings.email_signature || '',
     };
     const subject = renderTemplate(settings.appointment_reminder_subject, vars);
     const text = renderTemplate(settings.appointment_reminder_body, vars);
 
     if (dryRun) { reminders.push({ appointment: appt, client, subject, sent: false }); continue; }
 
-    const result = await sendEmail({ to: client.email, subject, text });
+    const result = await sendEmail({ to: client.email, subject, text, html: wrapHtml(text) });
     if (result.ok) {
       db.prepare(`UPDATE appointments SET reminder_sent_at = datetime('now') WHERE id = ?`).run(appt.id);
       logMessage(client.id, 'appointment_reminder', `${subject}\n\n${text}`);

@@ -18,6 +18,16 @@ async function request(path, options = {}) {
   return body;
 }
 
+function rangeQs(range) {
+  if (!range) return 'period=all';
+  if (typeof range === 'string') return `period=${range}`;
+  const p = new URLSearchParams();
+  if (range.from) p.set('from', range.from);
+  if (range.to) p.set('to', range.to);
+  if (!range.from && !range.to) p.set('period', range.period || 'all');
+  return p.toString();
+}
+
 export const api = {
   listClients: (params = {}) => {
     const qs = new URLSearchParams(
@@ -34,6 +44,43 @@ export const api = {
   stats: () => request('/stats'),
   tracker: () => request('/tracker'),
   reports: () => request('/reports'),
+  analyticsSummary: (days) => request(`/analytics/summary${days ? `?days=${days}` : ''}`),
+  listOrders: (clientId) => request(`/orders?clientId=${clientId}`),
+  listClientFeedback: (clientId) => request(`/clients/${clientId}/feedback`),
+  tapeQueue: () => request('/clients/tape-queue'),
+  // Accepts either a named period or an explicit {from,to} — see
+  // resolvePeriod() on the server, which is the single arbiter of both.
+  revenue: (range) => request(`/orders/revenue?${rangeQs(range)}`),
+  productMix: (range) => request(`/orders/product-mix?${rangeQs(range)}`),
+  workshopStats: () => request('/orders/workshop-stats'),
+  afterSalesStats: () => request('/orders/aftersales-stats'),
+  sendDocket: (id) => request(`/orders/${id}/send-docket`, { method: 'POST' }),
+  remindWorkshop: (id) => request(`/orders/${id}/remind-workshop`, { method: 'POST' }),
+  regions: () => request('/regions'),
+  products: () => request('/products'),
+  createProduct: (body) => request('/products', { method: 'POST', body: JSON.stringify(body) }),
+  updateProduct: (id, body) => request(`/products/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
+  deleteProduct: (id) => request(`/products/${id}`, { method: 'DELETE' }),
+  sizes: () => request('/sizes'),
+  sizeDistribution: () => request('/sizes/distribution'),
+  createSize: (body) => request('/sizes', { method: 'POST', body: JSON.stringify(body) }),
+  updateSize: (id, body) => request(`/sizes/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
+  deleteSize: (id) => request(`/sizes/${id}`, { method: 'DELETE' }),
+  productionBoard: (includeDelivered, scope) =>
+    request(`/orders/production-board?${new URLSearchParams({
+      ...(includeDelivered ? { includeDelivered: '1' } : {}),
+      ...(scope ? { scope } : {}),
+    })}`),
+  updateProduction: (orderId, body) =>
+    request(`/orders/${orderId}/production`, { method: 'PATCH', body: JSON.stringify(body) }),
+  redoOrder: (orderId, reason) =>
+    request(`/orders/${orderId}/redo`, { method: 'POST', body: JSON.stringify({ reason }) }),
+  createAlteration: (orderId, reason) =>
+    request(`/orders/${orderId}/alterations`, { method: 'POST', body: JSON.stringify({ reason }) }),
+  updateAlteration: (alterationId, body) =>
+    request(`/orders/alterations/${alterationId}`, { method: 'PATCH', body: JSON.stringify(body) }),
+  sendAlterationDetails: (alterationId) =>
+    request(`/orders/alterations/${alterationId}/send-details`, { method: 'POST' }),
 
   getSettings: () => request('/settings'),
   updateSettings: (data) => request('/settings', { method: 'PUT', body: JSON.stringify(data) }),

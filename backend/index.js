@@ -14,11 +14,18 @@ import trackerRouter from './routes/tracker.js';
 import reportsRouter from './routes/reports.js';
 import automationRouter from './routes/automation.js';
 import unsubscribeRouter from './routes/unsubscribe.js';
+import surveyRouter from './routes/survey.js';
+import workshopRouter from './routes/workshop.js';
+import sizesRouter from './routes/sizes.js';
+import productsRouter from './routes/products.js';
 import ordersRouter from './routes/orders.js';
 import webhooksRouter from './routes/webhooks.js';
 import appointmentsRouter from './routes/appointments.js';
+import leadsRouter from './routes/leads.js';
+import analyticsRouter from './routes/analytics.js';
 import { runBirthdayAutomation } from './lib/birthdayJob.js';
 import { runAppointmentReminderJob } from './lib/appointmentReminderJob.js';
+import { runBalanceReminderJob } from './lib/balanceReminderJob.js';
 
 dotenv.config();
 
@@ -30,13 +37,27 @@ console.log('[db] Migrations OK');
 const app = express();
 app.use(cors());
 
-// Stripe webhook signature verification needs the RAW request body — must be
-// parsed here, before the global JSON parser below, or verification fails
-// 100% of the time. body-parser marks the request as already-parsed, so the
-// express.json() call further down safely skips re-parsing this one path.
+// Stripe/Fathom webhook signature verification both need the RAW request
+// body — must be parsed here, before the global JSON parser below, or
+// verification fails 100% of the time. body-parser marks the request as
+// already-parsed, so the express.json() call further down safely skips
+// re-parsing these paths.
 app.use('/api/webhooks/stripe', express.raw({ type: 'application/json' }));
+app.use('/api/webhooks/fathom', express.raw({ type: 'application/json' }));
 
 app.use(express.json({ limit: '2mb' }));
+
+// The satisfaction survey is a plain HTML <form>, so it arrives urlencoded
+// rather than as JSON. Scoped to that path so nothing else changes shape.
+app.use('/survey', express.urlencoded({ extended: false, limit: '64kb' }));
+// Same reason: the workshop page is a plain HTML <form>, not JSON.
+app.use('/workshop', express.urlencoded({ extended: false, limit: '16kb' }));
+
+// Mounted OUTSIDE /api on purpose: it's the one page a client ever opens, and
+// it must sit on a path the Traefik public router lets through without Basic
+// Auth (see docker-compose.yml). Access is the per-order token in the URL.
+app.use('/survey', surveyRouter);
+app.use('/workshop', workshopRouter);
 
 app.get('/api/health', (_req, res) => {
   res.json({ ok: true, service: 'sly-crm' });
@@ -50,6 +71,8 @@ app.patch('/api/clients/:id', (req, res, next) => {
 app.use('/api/clients', clientsRouter);
 app.use('/api', statsRouter);
 app.use('/api/settings', settingsRouter);
+app.use('/api/sizes', sizesRouter);
+app.use('/api/products', productsRouter);
 app.use('/api/tracker', trackerRouter);
 app.use('/api/reports', reportsRouter);
 app.use('/api/automation', automationRouter);
@@ -61,7 +84,12 @@ app.use('/api/automation', automationRouter);
 app.use('/api/unsubscribe', unsubscribeRouter);
 app.use('/api/webhooks', webhooksRouter);
 app.use('/api/orders', ordersRouter);
+app.use('/api/leads', leadsRouter);
 app.use('/api/appointments', appointmentsRouter);
+// /api/analytics/track is also public at the Traefik level (see docker-compose.yml)
+// and re-checks SLY_INTAKE_SECRET itself, same pattern as the routers above.
+// /api/analytics/summary stays behind Traefik's default Basic Auth router.
+app.use('/api/analytics', analyticsRouter);
 
 app.use('/api', (_req, res) => res.status(404).json({ error: 'Not found' }));
 
@@ -97,4 +125,21 @@ cron.schedule('*/15 * * * *', () => {
   runAppointmentReminderJob({})
     .then(r => { if (!r.skipped && r.reminders.length) console.log(`[appointment-reminder] ${r.reminders.length} sent`); })
     .catch(e => console.error('[appointment-reminder] failed', e));
+}, { timezone: process.env.TZ || 'Europe/Paris' });
+
+// Balance chases, hourly between 09:00 and 19:00 local.
+//
+// The thresholds are still measured in days — running more often doesn't
+// chase anyone sooner. What it buys is a smaller blind spot: Stripe marks an
+// order paid within seconds of the client paying, so the only way to email
+// someone who has already paid is for them to pay just after a run. Hourly
+// caps that exposure at an hour instead of a day.
+//
+// Deliberately not around the clock: a reminder landing at 04:00 reads as an
+// unattended robot, which is the opposite of the impression these emails
+// exist to make. Anything falling due overnight simply goes out at 09:00.
+cron.schedule('0 9-19 * * *', () => {
+  runBalanceReminderJob({})
+    .then(r => { if (!r.skipped && r.reminders.length) console.log(`[balance-reminder] ${r.reminders.length} sent`); })
+    .catch(e => console.error('[balance-reminder] failed', e));
 }, { timezone: process.env.TZ || 'Europe/Paris' });

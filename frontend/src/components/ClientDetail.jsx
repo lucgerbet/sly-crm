@@ -2,18 +2,31 @@ import { useEffect, useState } from 'react';
 import { api } from '../api.js';
 import {
   TIMING, POTENTIAL, MESSAGE_TYPES, STAGE_PREREQ, STAGE_META,
-  fmtDate, initials, effectiveTiming, todayISO, todayPlusMonths, daysUntil,
+  BODY_MEASUREMENT_LABELS, FINAL_JACKET_LABELS, FINAL_PANT_LABELS,
+  CONTACT_TYPE_BADGE,
+  fmtDate, fmtMoney, initials, effectiveTiming, todayISO, todayPlusMonths, daysUntil,
 } from '../labels.js';
 
+const ORDER_STATUS_LABELS = {
+  deposit_pending: 'Deposit pending', deposit_paid: 'Deposit paid', appointment_booked: 'Meeting booked',
+  finalized: 'Finalized', balance_link_sent: 'Balance link sent', balance_paid: 'Balance paid', canceled: 'Canceled',
+};
+
 const EMPTY = {
-  first_name:'', last_name:'', phone:'', email:'', city:'', country:'', source:'', tags:'', notes:'',
-  birth_date:'', email_opt_out:0,
+  first_name:'', last_name:'', phone:'', email:'', city:'', country:'', address:'', source:'', tags:'', notes:'',
+  birth_date:'', email_opt_out:0, tape_measure_sent_at:null, needs_tape_measure:0, physical_prospect:0,
   next_step:'', last_contacted_date:'',
   ca_lifetime:'', purchase_count:'', last_purchase_date:'', last_purchase_item:'',
   assigned_to:'', potential:'',
   target_contact_date:'', contacted:0, answered:0, appointment:0,
   appointment_date:'', appointment_time:'', appointment_location:'', won:0,
   lost:0, lost_reason:'',
+  profession:'', company:'', job_title:'', sector:'',
+  suit_frequency:'', travel_frequency:'', wardrobe_size:'',
+  style_direction:'', style_reference:'', interests:'', rtw_frustrations:'', rtw_frustrations_note:'',
+  nationality:'', made_to_measure_reason:'', made_to_measure_reason_note:'',
+  next_event_type:'', next_event_date:'', referral_interest:'', referral_names:'',
+  recontact_events:0, recontact_new_piece:0, recontact_seasonal:0,
 };
 
 function Field({ label, children }) {
@@ -46,6 +59,35 @@ function Textarea({ value, onChange, placeholder, rows = 3 }) {
       rows={rows}
       className="w-full border border-line rounded-md px-3 py-2 text-sm outline-none focus:border-accent resize-none bg-surface"
     />
+  );
+}
+
+// Discovery tags arrive as a JSON array in a TEXT column (interests,
+// rtw_frustrations) — read-only here: they're picked from a fixed vocabulary
+// in the meeting tool, and a free-text box would let typos in that break the
+// segmentation queries the tags exist for.
+function TagRow({ label, json }) {
+  let tags = [];
+  try { tags = JSON.parse(json || '[]'); } catch { tags = []; }
+  if (!Array.isArray(tags) || tags.length === 0) return null;
+  return (
+    <div>
+      <div className="text-[11px] text-ink-secondary mb-1.5">{label}</div>
+      <div className="flex flex-wrap gap-1.5">
+        {tags.map(t => (
+          <span key={t} className="text-[11px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-600">{t}</span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function FeedbackLine({ label, value }) {
+  return (
+    <div>
+      <div className="text-[10px] text-ink-secondary uppercase tracking-[0.06em]">{label}</div>
+      <p className="text-sm text-ink-primary whitespace-pre-wrap">{value}</p>
+    </div>
   );
 }
 
@@ -156,6 +198,33 @@ function AssigneePicker({ value, onChange, options }) {
   );
 }
 
+function MeasurementRows({ labels, values }) {
+  const filled = Object.entries(labels).filter(([key]) => values?.[key]);
+  if (!filled.length) return <div className="text-xs text-ink-secondary italic">No measurements recorded.</div>;
+  return (
+    <div className="grid grid-cols-3 gap-x-4 gap-y-2">
+      {filled.map(([key, label]) => (
+        <div key={key} className="flex justify-between text-sm border-b border-line pb-1">
+          <span className="text-ink-secondary">{label}</span>
+          <span className="text-ink-primary font-medium">{values[key]} cm</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// Two groups, matching how measurements are actually taken: (1) the raw
+// body, (2) the finished garment's own numbers (jacket + trousers together —
+// both are "the finished suit", not two separate things to the stylist).
+function MeasurementGroup({ title, children }) {
+  return (
+    <div>
+      <div className="text-[11px] font-medium text-ink-secondary uppercase tracking-[0.08em] mb-2">{title}</div>
+      {children}
+    </div>
+  );
+}
+
 const HEADER_BADGES = [
   { key: 'contacted', label: 'Cont' },
   { key: 'answered', label: 'Rep' },
@@ -178,6 +247,10 @@ export default function ClientDetail({ clientId, onClose, onSaved, onDeleted, on
   const [activeTab, setActiveTab] = useState('profile');
   const [messages, setMessages] = useState([]);
   const [msgLoading, setMsgLoading] = useState(false);
+  const [orders, setOrders] = useState([]);
+  const [feedback, setFeedback] = useState([]);
+  const [surveys, setSurveys] = useState([]);
+  const [ordersLoading, setOrdersLoading] = useState(false);
   const [newMsg, setNewMsg] = useState({ type: 'note', content: '', date: todayISO() });
   const [addingMsg, setAddingMsg] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -239,6 +312,26 @@ export default function ClientDetail({ clientId, onClose, onSaved, onDeleted, on
     }
   }, [activeTab, clientId]);
 
+  useEffect(() => {
+    if (activeTab === 'orders' && clientId) {
+      setOrdersLoading(true);
+      api.listOrders(clientId)
+        .then(r => setOrders(r.data))
+        .catch(() => notify('Error loading orders', 'error'))
+        .finally(() => setOrdersLoading(false));
+    }
+  }, [activeTab, clientId]);
+
+  // Feedback lives inside the Profile tab (right under Discovery, since it's
+  // the same conversation), so it loads with that tab rather than its own.
+  useEffect(() => {
+    if (activeTab === 'profile' && clientId) {
+      api.listClientFeedback(clientId)
+        .then(r => { setFeedback(r.data); setSurveys(r.surveys || []); })
+        .catch(() => { setFeedback([]); setSurveys([]); });
+    }
+  }, [activeTab, clientId]);
+
   async function handleSave() {
     setSaving(true);
     try {
@@ -291,7 +384,14 @@ export default function ClientDetail({ clientId, onClose, onSaved, onDeleted, on
       <div className="flex items-center gap-3 px-5 py-4 border-b border-line bg-bg shrink-0">
         <div className="w-10 h-10 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center text-sm font-medium shrink-0">{ini}</div>
         <div className="flex-1 min-w-0">
-          <div className="text-base font-medium text-ink-primary">{name}</div>
+          <div className="flex items-center gap-1.5">
+            <span className="text-base font-medium text-ink-primary">{name}</span>
+            {!isNew && CONTACT_TYPE_BADGE[form.contact_type] && (
+              <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${CONTACT_TYPE_BADGE[form.contact_type].color}`}>
+                {CONTACT_TYPE_BADGE[form.contact_type].label}
+              </span>
+            )}
+          </div>
           <div className="text-xs text-ink-secondary truncate">
             {[form.city, form.country].filter(Boolean).join(' · ') || 'New profile'}
           </div>
@@ -317,7 +417,10 @@ export default function ClientDetail({ clientId, onClose, onSaved, onDeleted, on
 
       {/* Tabs */}
       <div className="flex border-b border-line shrink-0 bg-surface">
-        {[['profile','Profile'],['pipeline','Pipeline'],['activity','Activity']].map(([id, label]) => (
+        {(isNew
+          ? [['profile','Profile'],['pipeline','Pipeline'],['activity','Activity']]
+          : [['profile','Profile'],['pipeline','Pipeline'],['orders','Orders'],['measurements','Measurements'],['activity','Activity']]
+        ).map(([id, label]) => (
           <button
             key={id}
             onClick={() => setActiveTab(id)}
@@ -328,6 +431,9 @@ export default function ClientDetail({ clientId, onClose, onSaved, onDeleted, on
             {label}
             {id === 'activity' && messages.length > 0 && (
               <span className="ml-1.5 text-[10px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded-full">{messages.length}</span>
+            )}
+            {id === 'orders' && orders.length > 0 && (
+              <span className="ml-1.5 text-[10px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded-full">{orders.length}</span>
             )}
           </button>
         ))}
@@ -350,10 +456,14 @@ export default function ClientDetail({ clientId, onClose, onSaved, onDeleted, on
                   <Field label="City"><Input value={form.city} onChange={set('city')} placeholder="Paris" /></Field>
                   <Field label="Country"><Input value={form.country} onChange={set('country')} placeholder="France" /></Field>
                 </div>
+                <Field label="Mailing address"><Input value={form.address} onChange={v => (isNew ? set('address')(v) : quickSet('address', v))} placeholder="Street, postal code…" /></Field>
                 <div className="grid grid-cols-2 gap-3">
                   <Field label="Source"><Input value={form.source} onChange={set('source')} placeholder="Instagram, referral…" /></Field>
                   <Field label="Tags"><Input value={form.tags} onChange={set('tags')} placeholder="vip, wholesale…" /></Field>
                 </div>
+                <Field label="Nationality">
+                  <Input value={form.nationality} onChange={set('nationality')} placeholder="ISO code, e.g. FR" />
+                </Field>
                 <div className="grid grid-cols-2 gap-3 items-end">
                   <Field label="Birthday">
                     <Input type="date" value={form.birth_date} onChange={v => (isNew ? set('birth_date')(v) : quickSet('birth_date', v))} />
@@ -372,19 +482,254 @@ export default function ClientDetail({ clientId, onClose, onSaved, onDeleted, on
                     Used for the birthday reminder + greeting emails — see the Automation tab.
                   </div>
                 ) : null}
+                {/* Answered on the site at pre-order; shown here so it's
+                    obvious whether this client is even waiting for one. */}
+                <label className="flex items-center gap-2 text-xs text-ink-secondary cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={!!form.needs_tape_measure}
+                    onChange={e => (isNew
+                      ? set('needs_tape_measure')(e.target.checked ? 1 : 0)
+                      : quickSet('needs_tape_measure', e.target.checked ? 1 : 0))}
+                  />
+                  Needs a measuring tape
+                  {form.needs_tape_measure && !form.tape_measure_sent_at ? (
+                    <span className="text-amber-700">— to send</span>
+                  ) : null}
+                </label>
+                <label className="flex items-center gap-2 text-xs text-ink-secondary cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={!!form.tape_measure_sent_at}
+                    onChange={e => {
+                      const value = e.target.checked ? new Date().toISOString() : null;
+                      isNew ? set('tape_measure_sent_at')(value) : quickSet('tape_measure_sent_at', value);
+                    }}
+                  />
+                  Measuring tape sent
+                  {form.tape_measure_sent_at ? (
+                    <span className="text-ink-secondary/70">— {fmtDate(form.tape_measure_sent_at)}</span>
+                  ) : null}
+                </label>
+                {/* Only thing that can't be inferred from any other data —
+                    the "Client" vs "Prospect" badge above is computed from
+                    real paid orders, not this. This only matters while
+                    they're still a prospect: whether the email was collected
+                    in person rather than through the website. */}
+                <label className="flex items-center gap-2 text-xs text-ink-secondary cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={!!form.physical_prospect}
+                    onChange={e => (isNew
+                      ? set('physical_prospect')(e.target.checked ? 1 : 0)
+                      : quickSet('physical_prospect', e.target.checked ? 1 : 0))}
+                  />
+                  Prospect physique (email récolté en personne)
+                </label>
               </div>
 
               <div className="space-y-3">
                 <div className="text-[11px] font-medium text-ink-secondary uppercase tracking-[0.08em]">Commercial value</div>
-                <Field label="Lifetime revenue"><Input value={form.ca_lifetime} onChange={set('ca_lifetime')} type="number" placeholder="0" /></Field>
-                <Field label="Number of orders"><Input value={form.purchase_count} onChange={set('purchase_count')} type="number" placeholder="0" /></Field>
-                <Field label="Last purchase date"><Input value={form.last_purchase_date} onChange={set('last_purchase_date')} type="date" /></Field>
+
+                {/* Read-only because it is computed from Stripe-confirmed
+                    payments. Editing it by hand is what made it read 0 for
+                    every real client until now. */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <div className="text-[10px] font-medium text-ink-secondary uppercase tracking-[0.06em] mb-1">
+                      Lifetime revenue
+                    </div>
+                    <div className="text-xl font-medium">{fmtMoney(form.lifetime_value ?? 0)}</div>
+                    <div className="text-[11px] text-ink-secondary mt-0.5">
+                      calculé sur les paiements Stripe
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-[10px] font-medium text-ink-secondary uppercase tracking-[0.06em] mb-1">
+                      Commandes payées
+                    </div>
+                    <div className="text-xl font-medium">{form.order_count ?? 0}</div>
+                    <div className="text-[11px] text-ink-secondary mt-0.5">
+                      {form.last_purchase_at
+                        ? `dernier acompte ${fmtDate(form.last_purchase_at)}`
+                        : 'aucun acompte encaissé'}
+                    </div>
+                  </div>
+                </div>
+
                 <Field label="Last item"><Input value={form.last_purchase_item} onChange={set('last_purchase_item')} placeholder="What did they buy" /></Field>
                 <div className="border-t border-line pt-3">
                   <Field label="Notes"><Textarea value={form.notes} onChange={set('notes')} placeholder="Observations…" rows={5} /></Field>
                 </div>
               </div>
             </div>
+
+            {/* DISCOVERY — captured live in the meeting (sly-suit-meeting's
+                Discovery step), editable here afterwards. */}
+            <div className="border-t border-line pt-5 space-y-4">
+              <div className="text-[11px] font-medium text-ink-secondary uppercase tracking-[0.08em]">
+                Discovery
+              </div>
+
+              <div className="grid grid-cols-4 gap-3">
+                <Field label="Profession"><Input value={form.profession} onChange={v => (isNew ? set('profession')(v) : quickSet('profession', v))} placeholder="Lawyer, marketing director…" /></Field>
+                <Field label="Company"><Input value={form.company} onChange={v => (isNew ? set('company')(v) : quickSet('company', v))} /></Field>
+                <Field label="Job title"><Input value={form.job_title} onChange={v => (isNew ? set('job_title')(v) : quickSet('job_title', v))} /></Field>
+                <Field label="Sector">
+                  <Select value={form.sector} onChange={v => (isNew ? set('sector')(v) : quickSet('sector', v))}>
+                    <option value="">—</option>
+                    {['finance','law','tech','consulting','health','industry','entrepreneur','other'].map(s => (
+                      <option key={s} value={s}>{s}</option>
+                    ))}
+                  </Select>
+                </Field>
+              </div>
+
+              <div className="grid grid-cols-4 gap-3">
+                <Field label="Wears a suit">
+                  <Select value={form.suit_frequency} onChange={v => (isNew ? set('suit_frequency')(v) : quickSet('suit_frequency', v))}>
+                    <option value="">—</option>
+                    {['daily','weekly','occasional','events-only'].map(s => <option key={s} value={s}>{s}</option>)}
+                  </Select>
+                </Field>
+                <Field label="Travels">
+                  <Select value={form.travel_frequency} onChange={v => (isNew ? set('travel_frequency')(v) : quickSet('travel_frequency', v))}>
+                    <option value="">—</option>
+                    {['often','sometimes','never'].map(s => <option key={s} value={s}>{s}</option>)}
+                  </Select>
+                </Field>
+                <Field label="Wardrobe size">
+                  <Select value={form.wardrobe_size} onChange={v => (isNew ? set('wardrobe_size')(v) : quickSet('wardrobe_size', v))}>
+                    <option value="">—</option>
+                    {['0-1','2-4','5-10','10+'].map(s => <option key={s} value={s}>{s}</option>)}
+                  </Select>
+                </Field>
+                <Field label="Style direction">
+                  <Select value={form.style_direction} onChange={v => (isNew ? set('style_direction')(v) : quickSet('style_direction', v))}>
+                    <option value="">—</option>
+                    {['classic','contemporary','bold','minimalist'].map(s => <option key={s} value={s}>{s}</option>)}
+                  </Select>
+                </Field>
+              </div>
+
+              <div className="grid grid-cols-3 gap-3">
+                <Field label="Next event"><Input value={form.next_event_type} onChange={v => (isNew ? set('next_event_type')(v) : quickSet('next_event_type', v))} placeholder="Wedding, ceremony…" /></Field>
+                <Field label="Event date"><Input type="date" value={form.next_event_date ? String(form.next_event_date).slice(0,10) : ''} onChange={v => (isNew ? set('next_event_date')(v) : quickSet('next_event_date', v))} /></Field>
+                <Field label="Style reference"><Input value={form.style_reference} onChange={v => (isNew ? set('style_reference')(v) : quickSet('style_reference', v))} placeholder="Someone they admire" /></Field>
+              </div>
+
+              <TagRow label="Interests" json={form.interests} />
+
+              <Field label="Why made-to-measure">
+                <Select value={form.made_to_measure_reason} onChange={v => (isNew ? set('made_to_measure_reason')(v) : quickSet('made_to_measure_reason', v))}>
+                  <option value="">—</option>
+                  <option value="experience">The made-to-measure experience</option>
+                  <option value="nothing-fits">Nothing fits me off-the-rack</option>
+                  <option value="time">Time / convenience</option>
+                </Select>
+              </Field>
+              {form.made_to_measure_reason_note ? (
+                <div>
+                  <div className="text-[11px] text-ink-secondary mb-1">In their own words</div>
+                  <p className="text-sm text-ink-primary whitespace-pre-wrap border border-line rounded-md p-3 bg-bg">
+                    {form.made_to_measure_reason_note}
+                  </p>
+                </div>
+              ) : null}
+
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="Would refer others">
+                  <Select value={form.referral_interest} onChange={v => (isNew ? set('referral_interest')(v) : quickSet('referral_interest', v))}>
+                    <option value="">—</option>
+                    {['yes','maybe','no'].map(s => <option key={s} value={s}>{s}</option>)}
+                  </Select>
+                </Field>
+                <Field label="Names mentioned"><Input value={form.referral_names} onChange={v => (isNew ? set('referral_names')(v) : quickSet('referral_names', v))} /></Field>
+              </div>
+
+              <div>
+                <div className="text-[11px] text-ink-secondary mb-1.5">Wants to be contacted about</div>
+                <div className="flex flex-wrap gap-4">
+                  {[
+                    ['recontact_events', 'Upcoming events'],
+                    ['recontact_new_piece', 'Another piece'],
+                    ['recontact_seasonal', 'New arrivals / seasons'],
+                  ].map(([key, label]) => (
+                    <label key={key} className="flex items-center gap-2 text-xs text-ink-secondary cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={!!form[key]}
+                        onChange={e => (isNew ? set(key)(e.target.checked ? 1 : 0) : quickSet(key, e.target.checked ? 1 : 0))}
+                      />
+                      {label}
+                    </label>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* The client's own answers, submitted alone from the email link.
+                Kept above the meeting debrief on purpose: this is the
+                unfiltered one, and it's the one worth reading first. */}
+            {surveys.length > 0 && (
+              <div className="border-t border-line pt-5 space-y-3">
+                <div className="text-[11px] font-medium text-ink-secondary uppercase tracking-[0.08em]">
+                  Satisfaction survey <span className="text-ink-secondary/60">— answered by the client</span>
+                </div>
+                {surveys.map(s => (
+                  <div key={s.id} className="border border-line rounded-lg p-4 bg-bg space-y-2">
+                    <div className="flex justify-between items-start">
+                      <span className="text-xs font-medium text-ink-primary">{s.order_number || '—'}</span>
+                      <span className="text-xs text-ink-secondary">{fmtDate(s.submitted_at)}</span>
+                    </div>
+                    <div className="grid grid-cols-4 gap-3">
+                      {[
+                        ['Overall', s.rating_overall],
+                        ['Guidance', s.rating_guidance],
+                        ['Simplicity', s.rating_simplicity],
+                        ['Would recommend', s.rating_recommend],
+                      ].map(([label, v]) => (
+                        <div key={label}>
+                          <div className="text-[10px] text-ink-secondary uppercase tracking-[0.06em]">{label}</div>
+                          <div className={`text-sm font-medium ${
+                            v == null ? 'text-ink-secondary' : v <= 2 ? 'text-red-600' : v >= 4 ? 'text-green-700' : 'text-amber-700'
+                          }`}>
+                            {v == null ? '—' : `${v}/5`}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    {s.improvement && (
+                      <div className="pt-1">
+                        <div className="text-[10px] text-ink-secondary uppercase tracking-[0.06em]">In their words</div>
+                        <p className="text-sm text-ink-primary whitespace-pre-wrap">{s.improvement}</p>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* End-of-meeting debrief, one block per meeting. */}
+            {feedback.length > 0 && (
+              <div className="border-t border-line pt-5 space-y-3">
+                <div className="text-[11px] font-medium text-ink-secondary uppercase tracking-[0.08em]">
+                  Meeting feedback
+                </div>
+                {feedback.map(f => (
+                  <div key={f.id} className="border border-line rounded-lg p-4 bg-bg space-y-2">
+                    <div className="flex justify-between items-start">
+                      <span className="text-xs font-medium text-ink-primary">{f.order_number || '—'}</span>
+                      <span className="text-xs text-ink-secondary">{fmtDate(f.created_at)}</span>
+                    </div>
+                    {f.experience_note && <FeedbackLine label="Experience" value={f.experience_note} />}
+                    {f.time_saved && <FeedbackLine label="Saved time" value={f.time_saved} />}
+                    {f.improvement_ideas && <FeedbackLine label="Ideas to improve" value={f.improvement_ideas} />}
+                    {f.friction_points && <FeedbackLine label="Friction" value={f.friction_points} />}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
 
@@ -456,6 +801,83 @@ export default function ClientDetail({ clientId, onClose, onSaved, onDeleted, on
                 </Field>
               )}
             </div>
+          </div>
+        )}
+
+        {/* ORDERS */}
+        {activeTab === 'orders' && (
+          <div className="p-5 space-y-3">
+            {ordersLoading && <div className="text-center text-sm text-ink-secondary py-6">Loading…</div>}
+            {!ordersLoading && orders.length === 0 && (
+              <div className="text-center text-sm text-ink-secondary py-6">No orders yet.</div>
+            )}
+            {orders.map(order => (
+              <div key={order.id} className="border border-line rounded-lg p-4 space-y-2">
+                <div className="flex justify-between items-start">
+                  <div>
+                    <div className="text-sm font-medium text-ink-primary">{order.order_number || order.id.slice(0, 8)}</div>
+                    <div className="text-xs text-ink-secondary">{order.product_type || 'Product not set'} · {fmtDate(order.created_at)}</div>
+                  </div>
+                  <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-gray-100 text-gray-600">
+                    {ORDER_STATUS_LABELS[order.status] || order.status}
+                  </span>
+                </div>
+                <div className="flex items-center gap-4 text-xs text-ink-secondary">
+                  <span>Deposit: {fmtMoney(order.deposit_amount_cents != null ? order.deposit_amount_cents / 100 : null)} ({order.deposit_status})</span>
+                  <span>Balance: {fmtMoney(order.balance_amount_cents != null ? order.balance_amount_cents / 100 : null)} ({order.balance_status})</span>
+                </div>
+                <a
+                  href={`/api/orders/${order.id}/invoice.pdf`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1.5 text-xs font-medium text-accent hover:underline"
+                >
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 3v12m0 0l-4-4m4 4l4-4M5 21h14"/></svg>
+                  Download invoice
+                </a>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* MEASUREMENTS */}
+        {activeTab === 'measurements' && (
+          <div className="p-5 space-y-6">
+            {(() => {
+              let m = null;
+              try { m = form.measurements_json ? JSON.parse(form.measurements_json) : null; } catch { m = null; }
+              if (!m) {
+                return (
+                  <div className="text-center text-sm text-ink-secondary py-6">
+                    No measurements on file yet — they're saved here automatically once a meeting is finalized in the Suit Creation Meeting tool.
+                  </div>
+                );
+              }
+              return (
+                <>
+                  <div className="text-xs text-ink-secondary">
+                    Last updated {fmtDate(form.measurements_updated_at)}
+                    {m.measurementApproach ? ` · Approach: ${m.measurementApproach}` : ''}
+                    {m.fitPreference ? ` · Fit preference: ${m.fitPreference}` : ''}
+                  </div>
+                  <MeasurementGroup title="1. Body measurements">
+                    <MeasurementRows labels={BODY_MEASUREMENT_LABELS} values={m.bodyMeasurements} />
+                  </MeasurementGroup>
+                  <MeasurementGroup title="2. Final suit measurements">
+                    <div className="space-y-3">
+                      <div>
+                        <div className="text-xs font-medium text-ink-secondary mb-1.5">Jacket</div>
+                        <MeasurementRows labels={FINAL_JACKET_LABELS} values={m.finalJacket} />
+                      </div>
+                      <div>
+                        <div className="text-xs font-medium text-ink-secondary mb-1.5">Trousers</div>
+                        <MeasurementRows labels={FINAL_PANT_LABELS} values={m.finalPant} />
+                      </div>
+                    </div>
+                  </MeasurementGroup>
+                </>
+              );
+            })()}
           </div>
         )}
 

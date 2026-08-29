@@ -24,6 +24,36 @@ function Input({ value, onChange, placeholder, type = 'text' }) {
   );
 }
 
+// Settings store cents; nobody wants to type "16600" for 166 €. Keeps a local
+// draft while typing and only converts on blur, so a half-typed "166." isn't
+// reformatted out from under the cursor.
+function MoneyInput({ cents, onCents, placeholder }) {
+  const asEuros = cents === '' || cents == null ? '' : String(Number(cents) / 100);
+  const [draft, setDraft] = useState(asEuros);
+  useEffect(() => { setDraft(asEuros); }, [asEuros]);
+
+  const commit = () => {
+    const t = draft.trim();
+    if (t === '') { onCents(''); return; }
+    const n = Number(t);
+    // Reject junk by snapping back to the saved value rather than writing a
+    // cost of NaN, which would silently drop orders out of the margin.
+    if (!Number.isFinite(n) || n < 0) { setDraft(asEuros); return; }
+    onCents(String(Math.round(n * 100)));
+  };
+
+  return (
+    <input
+      type="number" min="0" step="0.01"
+      value={draft}
+      placeholder={placeholder}
+      onChange={e => setDraft(e.target.value)}
+      onBlur={commit}
+      className="w-full border border-line rounded-md px-3 py-1.5 text-sm outline-none focus:border-accent bg-surface"
+    />
+  );
+}
+
 function Textarea({ value, onChange, rows = 5 }) {
   return (
     <textarea
@@ -68,6 +98,13 @@ export default function Automation({ notify }) {
         birthday_reminder_body: settings.birthday_reminder_body,
         birthday_greeting_subject: settings.birthday_greeting_subject,
         birthday_greeting_body: settings.birthday_greeting_body,
+        default_cost_suit_cents: settings.default_cost_suit_cents ?? '',
+        default_cost_blazer_cents: settings.default_cost_blazer_cents ?? '',
+        default_cost_trousers_cents: settings.default_cost_trousers_cents ?? '',
+        stripe_fee_percent: settings.stripe_fee_percent ?? '',
+        stripe_fee_fixed_cents: settings.stripe_fee_fixed_cents ?? '',
+        redo_cost_cents: settings.redo_cost_cents ?? '',
+        alteration_cost_cents: settings.alteration_cost_cents ?? '',
       };
       await api.updateSettings(payload);
       notify?.('Automation settings saved', 'success');
@@ -179,6 +216,51 @@ export default function Automation({ notify }) {
         <Field label="Body" hint="Placeholders: {{first_name}}, {{last_name}}, {{shop_url}}. An unsubscribe link is appended automatically.">
           <Textarea value={settings.birthday_greeting_body} onChange={set('birthday_greeting_body')} />
         </Field>
+      </div>
+
+      <div className="bg-surface border border-line rounded-xl p-5 space-y-4">
+        <div className="text-[11px] font-medium text-ink-secondary uppercase tracking-[0.08em]">Production costs &amp; payment fees</div>
+        <div className="text-xs text-ink-secondary">
+          What each piece costs you to make — workshop, fabric, shipping. Applied automatically to every
+          settled order of that type, so you never retype it. A cost entered on an individual order overrides
+          it. Leave a piece blank if you don't know its cost yet: its orders are excluded from the margin
+          rather than counted as pure profit.
+        </div>
+
+        <div className="grid grid-cols-3 gap-3">
+          <Field label="Suit — cost (€)">
+            <MoneyInput cents={settings.default_cost_suit_cents} onCents={set('default_cost_suit_cents')} placeholder="166" />
+          </Field>
+          <Field label="Blazer — cost (€)">
+            <MoneyInput cents={settings.default_cost_blazer_cents} onCents={set('default_cost_blazer_cents')} placeholder="not set" />
+          </Field>
+          <Field label="Trousers — cost (€)">
+            <MoneyInput cents={settings.default_cost_trousers_cents} onCents={set('default_cost_trousers_cents')} placeholder="not set" />
+          </Field>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Remake — cost you bear (€)" hint="Applied per remake. Deducted from the margin.">
+            <MoneyInput cents={settings.redo_cost_cents} onCents={set('redo_cost_cents')} placeholder="140" />
+          </Field>
+          <Field label="Alteration — standard cost (€)" hint="Leave blank if unknown: alterations then count as incidents with no price, never as free.">
+            <MoneyInput cents={settings.alteration_cost_cents} onCents={set('alteration_cost_cents')} placeholder="not set" />
+          </Field>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Stripe fee (%)" hint="Counted once on the order total.">
+            <Input type="number" value={settings.stripe_fee_percent} onChange={set('stripe_fee_percent')} placeholder="1.5" />
+          </Field>
+          <Field label="Stripe fixed fee per payment (€)" hint="Charged twice per order — deposit, then balance.">
+            <MoneyInput cents={settings.stripe_fee_fixed_cents} onCents={set('stripe_fee_fixed_cents')} placeholder="0.25" />
+          </Field>
+        </div>
+
+        <div className="text-[11px] text-ink-secondary">
+          These four figures are what the Dashboard's gross and net margin are built from — change one and both
+          recompute across every settled order, including past ones.
+        </div>
       </div>
 
       <div className="flex justify-end">

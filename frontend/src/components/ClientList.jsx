@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { api } from '../api.js';
-import { TIMING, VALUE_TIERS, STAGE_PREREQ, STAGE_META, valueTier, monthsSince, fmtDate, fmtMoney } from '../labels.js';
+import {
+  TIMING, VALUE_TIERS, STAGE_PREREQ, STAGE_META, CONTACT_TYPE_OPTS, CONTACT_TYPE_BADGE,
+  valueTier, monthsSince, fmtDate, fmtMoney,
+} from '../labels.js';
 import { downloadCsv } from '../exportCsv.js';
 
 const STAGE_OPTS = [
@@ -40,7 +43,12 @@ function Badge({ on, label, onClick }) {
 
 const selectCls = 'border border-line rounded-md px-2 py-1.5 text-sm bg-surface outline-none focus:border-accent';
 
-export default function ClientList({ onSelect, onNew, notify, initialFilters = {} }) {
+// `mode` splits the book in two, because a prospect and a client are not the
+// same object with a different flag: one is someone whose details were
+// collected, the other is someone who paid. Showing them together forces the
+// reader to filter mentally on every glance.
+export default function ClientList({ onSelect, onNew, notify, initialFilters = {}, mode = 'clients' }) {
+  const isProspects = mode === 'prospects';
   const [clients, setClients] = useState([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -48,6 +56,7 @@ export default function ClientList({ onSelect, onNew, notify, initialFilters = {
   const [stage, setStage] = useState(initialFilters.stage || '');
   const [timing, setTiming] = useState(initialFilters.timing || '');
   const [tier, setTier] = useState(initialFilters.valueTier || '');
+  const [contactType, setContactType] = useState(initialFilters.contactType || '');
   const [assignedTo, setAssignedTo] = useState(initialFilters.assignedTo || '');
   const [assignees, setAssignees] = useState([]);
 
@@ -106,12 +115,17 @@ export default function ClientList({ onSelect, onNew, notify, initialFilters = {
   useEffect(() => {
     clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => {
-      load({ q: search || undefined, stage: stage || undefined, timing: timing || undefined,
-             valueTier: tier || undefined, assignedTo: assignedTo || undefined });
+      load({
+        q: search || undefined, stage: stage || undefined, timing: timing || undefined,
+        valueTier: isProspects ? undefined : (tier || undefined),
+        // The mode decides the population; the dropdown only narrows within it.
+        contactType: isProspects ? (contactType || 'prospect') : 'client',
+        assignedTo: assignedTo || undefined,
+      });
     }, 200);
-  }, [search, stage, timing, tier, assignedTo]);
+  }, [search, stage, timing, tier, contactType, assignedTo, isProspects]);
 
-  const hasFilters = search || stage || timing || tier || assignedTo;
+  const hasFilters = search || stage || timing || tier || contactType || assignedTo;
 
   return (
     <div className="space-y-4">
@@ -122,11 +136,16 @@ export default function ClientList({ onSelect, onNew, notify, initialFilters = {
           value={search}
           onChange={e => setSearch(e.target.value)}
         />
-        <select className={selectCls} value={tier} onChange={e => setTier(e.target.value)}>
-          {TIER_OPTS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-        </select>
+        {!isProspects && (
+          <select className={selectCls} value={tier} onChange={e => setTier(e.target.value)}>
+            {TIER_OPTS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+          </select>
+        )}
         <select className={selectCls} value={stage} onChange={e => setStage(e.target.value)}>
           {STAGE_OPTS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+        </select>
+        <select className={selectCls} value={contactType} onChange={e => setContactType(e.target.value)}>
+          {CONTACT_TYPE_OPTS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
         </select>
         <select className={selectCls} value={assignedTo} onChange={e => setAssignedTo(e.target.value)}>
           <option value="">All assignees</option>
@@ -135,7 +154,7 @@ export default function ClientList({ onSelect, onNew, notify, initialFilters = {
         </select>
         {hasFilters && (
           <button className="text-xs text-ink-secondary hover:text-ink-primary border border-line rounded-md px-3 py-1.5"
-            onClick={() => { setSearch(''); setStage(''); setTiming(''); setTier(''); setAssignedTo(''); }}>
+            onClick={() => { setSearch(''); setStage(''); setTiming(''); setTier(''); setContactType(''); setAssignedTo(''); }}>
             Clear
           </button>
         )}
@@ -155,26 +174,35 @@ export default function ClientList({ onSelect, onNew, notify, initialFilters = {
 
       <div className="bg-surface border border-line rounded-xl overflow-hidden">
         <div className="grid grid-cols-[190px_1fr_150px_150px_90px] border-b border-line px-4 py-2.5 bg-bg">
-          <span className="text-[11px] font-medium text-ink-secondary">Client</span>
+          <span className="text-[11px] font-medium text-ink-secondary">{isProspects ? 'Prospect' : 'Client'}</span>
           <span className="text-[11px] font-medium text-ink-secondary">Pipeline</span>
-          <span className="text-[11px] font-medium text-ink-secondary">Lifetime rev. · tier</span>
-          <span className="text-[11px] font-medium text-ink-secondary">Last purchase</span>
+          <span className="text-[11px] font-medium text-ink-secondary">
+            {isProspects ? 'Origine' : 'Lifetime rev. · tier'}
+          </span>
+          <span className="text-[11px] font-medium text-ink-secondary">
+            {isProspects ? 'Ajouté le' : 'Last purchase'}
+          </span>
           <span className="text-[11px] font-medium text-ink-secondary">Timing</span>
         </div>
 
         {loading && <div className="px-4 py-10 text-center text-sm text-ink-secondary">Loading…</div>}
         {!loading && clients.length === 0 && (
           <div className="px-4 py-10 text-center text-sm text-ink-secondary">
-            {hasFilters ? 'No clients match these filters.' : 'No clients yet — click "+ Add" to create your first one.'}
+            {hasFilters
+              ? (isProspects ? 'Aucun prospect ne correspond à ces filtres.' : 'No clients match these filters.')
+              : (isProspects
+                ? 'Aucun prospect — ils arrivent tout seuls dès qu\'un visiteur laisse son email sur le site.'
+                : 'Aucun client encore — un contact devient client dès son premier acompte payé.')}
           </div>
         )}
 
         {!loading && clients.map(c => {
           const name = [c.first_name, c.last_name].filter(Boolean).join(' ') || '—';
           const timingCfg = TIMING[c.eff_timing];
-          const tierKey = valueTier(c.ca_lifetime);
+          // Derived server-side from Stripe-confirmed payments, not typed by hand.
+          const tierKey = valueTier(c.lifetime_value ?? c.ca_lifetime);
           const tierCfg = VALUE_TIERS[tierKey];
-          const mo = monthsSince(c.last_purchase_date);
+          const mo = monthsSince(c.last_purchase_at || c.last_purchase_date);
           return (
             <div
               key={c.id}
@@ -182,7 +210,14 @@ export default function ClientList({ onSelect, onNew, notify, initialFilters = {
               onClick={() => onSelect(c.id)}
             >
               <div>
-                <div className="text-sm font-medium text-ink-primary">{name}</div>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-sm font-medium text-ink-primary">{name}</span>
+                  {CONTACT_TYPE_BADGE[c.contact_type] && (
+                    <span className={`text-[9px] font-medium px-1.5 py-0.5 rounded-full ${CONTACT_TYPE_BADGE[c.contact_type].color}`}>
+                      {CONTACT_TYPE_BADGE[c.contact_type].label}
+                    </span>
+                  )}
+                </div>
                 <div className="text-[11px] text-ink-secondary">{[c.city, c.source].filter(Boolean).join(' · ') || '—'}</div>
                 {c.assigned_to && (
                   <div className="text-[10px] text-accent font-medium mt-0.5">→ {c.assigned_to}</div>
@@ -195,17 +230,30 @@ export default function ClientList({ onSelect, onNew, notify, initialFilters = {
                 <Badge on={!!c.won}         label="Client"    onClick={e => attemptToggle(e, c, 'won')} />
                 {!!c.lost && <Badge on={false} label="Lost" />}
               </div>
-              <div>
-                <div className="text-sm font-medium text-ink-primary">{fmtMoney(c.ca_lifetime)}</div>
-                <span className={`inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded-full mt-0.5 ${tierCfg.color}`}>
-                  <span className="w-1.5 h-1.5 rounded-full" style={{ background: tierCfg.dot }} />
-                  {tierCfg.label}
-                </span>
-              </div>
-              <div>
-                <div className="text-xs text-ink-primary">{fmtDate(c.last_purchase_date)}</div>
-                {mo != null && <div className="text-[11px] text-ink-secondary">{mo === 0 ? 'this month' : `${mo} mo ago`}</div>}
-              </div>
+              {/* A tier is a lifetime-revenue badge. On someone who has never
+                  bought, it always reads "Bronze" — a zero dressed up as a
+                  standing. Prospects get where they came from instead, which
+                  is the fact that actually exists about them. */}
+              {isProspects ? (
+                <>
+                  <div className="text-xs text-ink-secondary">{c.source || '—'}</div>
+                  <div className="text-xs text-ink-secondary">{fmtDate(c.created_at)}</div>
+                </>
+              ) : (
+                <>
+                  <div>
+                    <div className="text-sm font-medium text-ink-primary">{fmtMoney(c.lifetime_value ?? c.ca_lifetime)}</div>
+                    <span className={`inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded-full mt-0.5 ${tierCfg.color}`}>
+                      <span className="w-1.5 h-1.5 rounded-full" style={{ background: tierCfg.dot }} />
+                      {tierCfg.label}
+                    </span>
+                  </div>
+                  <div>
+                    <div className="text-xs text-ink-primary">{fmtDate(c.last_purchase_at || c.last_purchase_date)}</div>
+                    {mo != null && <div className="text-[11px] text-ink-secondary">{mo === 0 ? 'this month' : `${mo} mo ago`}</div>}
+                  </div>
+                </>
+              )}
               {timingCfg ? (
                 <span className={`inline-flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-full ${timingCfg.color}`}>
                   <span className="w-1.5 h-1.5 rounded-full" style={{ background: timingCfg.dot }} />
