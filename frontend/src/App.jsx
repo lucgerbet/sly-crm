@@ -23,6 +23,11 @@ const TABS = [
   { id: 'automation', label: 'Automation' },
 ];
 
+// The stylist tool — a separate app on its own subdomain, behind the same
+// Basic Auth. Linked rather than embedded: it is where an order is actually
+// taken, and Luc reaches for it from the CRM several times a day.
+const STYLIST_URL = 'https://sly-styliste.srv1758374.hstgr.cloud/';
+
 let toastId = 0;
 
 export default function App() {
@@ -96,6 +101,20 @@ export default function App() {
                 </button>
               ))}
             </nav>
+            <a
+              href={STYLIST_URL}
+              target="_blank"
+              rel="noreferrer"
+              title="Ouvre l'outil de prise de commande dans un nouvel onglet"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium border border-line text-ink-secondary hover:text-ink-primary hover:border-ink-secondary transition-colors whitespace-nowrap"
+            >
+              Prise de commande
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
+                   strokeLinecap="round" strokeLinejoin="round" className="opacity-60">
+                <path d="M7 17 17 7M9 7h8v8" />
+              </svg>
+            </a>
+
             <button
               onClick={handleManualRefresh}
               title="Refresh"
