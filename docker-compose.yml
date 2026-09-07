@@ -42,7 +42,12 @@ services:
       # `/api/gift-cards` added 2026-08-30 for "The SLY Experience" gift
       # offer — sly-shop calls intake/:code/:code/redeem server-to-server,
       # each individually secret-gated in Express like the others above.
-      - "traefik.http.routers.slycrm-public.rule=Host(`sly-crm.srv1758374.hstgr.cloud`) && (PathPrefix(`/survey`) || PathPrefix(`/workshop`) || PathPrefix(`/api/unsubscribe`) || PathPrefix(`/api/webhooks`) || PathPrefix(`/api/orders/intake`) || PathPrefix(`/api/orders/finalize`) || PathPrefix(`/api/orders/search`) || PathPrefix(`/api/orders/upcoming-meetings`) || PathPrefix(`/api/orders/send-to-workshop`) || PathPrefix(`/api/orders/feedback`) || PathPrefix(`/api/clients/set-`) || PathPrefix(`/api/clients/lookup`) || PathPrefix(`/api/sizes/lookup`) || PathPrefix(`/api/appointments/from-widget`) || PathPrefix(`/api/leads/capture`) || PathPrefix(`/api/analytics/track`) || PathPrefix(`/api/gift-cards`))"
+      # `/api/content/intake`, `/next-topic` and `/topics/bulk` added
+      # 2026-09-08 for the Instagram carousel routine: the scheduled task runs
+      # on Luc's Mac, has no browser session, and is secret-gated in Express
+      # (requireIntakeSecret). Only those three paths are listed — the rest of
+      # /api/content (editing, uploads, images) stays behind Basic Auth.
+      - "traefik.http.routers.slycrm-public.rule=Host(`sly-crm.srv1758374.hstgr.cloud`) && (PathPrefix(`/survey`) || PathPrefix(`/workshop`) || PathPrefix(`/api/unsubscribe`) || PathPrefix(`/api/webhooks`) || PathPrefix(`/api/orders/intake`) || PathPrefix(`/api/orders/finalize`) || PathPrefix(`/api/orders/search`) || PathPrefix(`/api/orders/upcoming-meetings`) || PathPrefix(`/api/orders/send-to-workshop`) || PathPrefix(`/api/orders/feedback`) || PathPrefix(`/api/clients/set-`) || PathPrefix(`/api/clients/lookup`) || PathPrefix(`/api/sizes/lookup`) || PathPrefix(`/api/appointments/from-widget`) || PathPrefix(`/api/leads/capture`) || PathPrefix(`/api/analytics/track`) || PathPrefix(`/api/gift-cards`) || PathPrefix(`/api/content/intake`) || PathPrefix(`/api/content/next-topic`) || PathPrefix(`/api/content/topics/bulk`))"
       - traefik.http.routers.slycrm-public.entrypoints=websecure
       - traefik.http.routers.slycrm-public.tls.certresolver=letsencrypt
       - traefik.http.routers.slycrm-public.service=slycrm-public

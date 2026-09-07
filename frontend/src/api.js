@@ -94,4 +94,18 @@ export const api = {
   automationStatus: () => request('/automation/status'),
   automationRun: (dryRun) => request(`/automation/run${dryRun ? '?dryRun=1' : ''}`, { method: 'POST' }),
   automationTestEmail: (to) => request('/automation/test-email', { method: 'POST', body: JSON.stringify({ to }) }),
+
+  contentOverview: () => request('/content/overview'),
+  createPost: (data) => request('/content/posts', { method: 'POST', body: JSON.stringify(data) }),
+  updatePost: (id, data) => request(`/content/posts/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  deletePost: (id) => request(`/content/posts/${id}`, { method: 'DELETE' }),
+  createTopic: (data) => request('/content/topics', { method: 'POST', body: JSON.stringify(data) }),
+  updateTopic: (id, data) => request(`/content/topics/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  deleteTopic: (id) => request(`/content/topics/${id}`, { method: 'DELETE' }),
+  // L'image part telle quelle dans le corps de la requête — pas de multipart,
+  // donc pas de FormData ni de dépendance côté serveur.
+  uploadSlideImage: (id, n, file) => request(`/content/posts/${id}/slides/${n}/image`, {
+    method: 'PUT', headers: { 'Content-Type': file.type }, body: file,
+  }),
+  deleteSlideImage: (id, n) => request(`/content/posts/${id}/slides/${n}/image`, { method: 'DELETE' }),
 };

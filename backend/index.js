@@ -24,6 +24,7 @@ import appointmentsRouter from './routes/appointments.js';
 import leadsRouter from './routes/leads.js';
 import analyticsRouter from './routes/analytics.js';
 import giftCardsRouter from './routes/giftCards.js';
+import contentRouter from './routes/content.js';
 import { runBirthdayAutomation } from './lib/birthdayJob.js';
 import { runAppointmentReminderJob } from './lib/appointmentReminderJob.js';
 import { runBalanceReminderJob } from './lib/balanceReminderJob.js';
@@ -92,6 +93,11 @@ app.use('/api/gift-cards', giftCardsRouter);
 // and re-checks SLY_INTAKE_SECRET itself, same pattern as the routers above.
 // /api/analytics/summary stays behind Traefik's default Basic Auth router.
 app.use('/api/analytics', analyticsRouter);
+// Contenu Instagram. /api/content/intake, /next-topic et /topics/bulk sont
+// aussi publics au niveau Traefik (voir docker-compose.yml) parce que la
+// tâche programmée écrit depuis le Mac de Luc, sans session navigateur ; ils
+// revérifient SLY_INTAKE_SECRET dans Express, comme les intakes ci-dessus.
+app.use('/api/content', contentRouter);
 
 app.use('/api', (_req, res) => res.status(404).json({ error: 'Not found' }));
 

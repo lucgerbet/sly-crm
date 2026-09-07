@@ -3,6 +3,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomBytes } from 'node:crypto';
 import dotenv from 'dotenv';
+import { SEED_TOPICS } from './lib/contentSeed.js';
 
 dotenv.config();
 
@@ -924,6 +925,73 @@ export function migrate() {
   seed.run('internal_gift_redeemed_subject', 'SLY Experience utilisée — {{first_name}} {{last_name}}');
   seed.run('internal_gift_redeemed_body',
     "Une carte SLY Experience vient d'être utilisée.\n\nBénéficiaire : {{first_name}} {{last_name}} ({{email}})\nPack : {{pack_label}}\nCommande : {{order_reference}}\n\nDéjà entièrement réglé — rien à encaisser, rendez-vous à honorer normalement.");
+
+  // ————————————————————————————————————————————————————————————————
+  // Contenu Instagram (2026-09-08)
+  //
+  // Le CRM est déjà l'endroit où Luc regarde sa journée ; le contenu y vit
+  // donc aussi plutôt que dans un dossier séparé qu'on oublie d'ouvrir. Deux
+  // tables suffisent : une banque de sujets (pour ne jamais repartir d'une
+  // page blanche ni republier le même angle) et les carousels eux-mêmes.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS content_topics (
+      id TEXT PRIMARY KEY,
+      pillar TEXT NOT NULL,           -- contentSeed.js : PILLARS[].key
+      title TEXT NOT NULL,
+      angle TEXT,                     -- une phrase : l'angle à tenir
+      status TEXT NOT NULL DEFAULT 'idle',  -- idle | used | dropped
+      used_at TEXT,
+      sort_order INTEGER DEFAULT 0,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS content_posts (
+      id TEXT PRIMARY KEY,
+      topic_id TEXT,
+      pillar TEXT,
+      title TEXT NOT NULL,
+      publish_date TEXT,              -- YYYY-MM-DD : la date visée, pas la date réelle
+
+      -- Le carousel lui-même. Un tableau JSON de slides
+      -- { n, kicker, headline, body, imagePrompt, image } — stocké en bloc
+      -- parce qu'un carousel se lit et se réécrit toujours entièrement,
+      -- jamais slide par slide via SQL.
+      slides TEXT NOT NULL DEFAULT '[]',
+      caption TEXT,
+      hashtags TEXT,
+      notes TEXT,                     -- garde-fous, sources, avertissements de la routine
+
+      -- to_illustrate : écrit, en attente des visuels Higgsfield
+      -- ready        : visuels déposés, prêt à publier
+      -- published    : publié sur Instagram
+      -- archived     : écarté
+      status TEXT NOT NULL DEFAULT 'to_illustrate',
+      published_at TEXT,
+
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now')),
+
+      FOREIGN KEY (topic_id) REFERENCES content_topics(id) ON DELETE SET NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_content_topics_status ON content_topics(status);
+    CREATE INDEX IF NOT EXISTS idx_content_posts_status ON content_posts(status);
+    CREATE INDEX IF NOT EXISTS idx_content_posts_date ON content_posts(publish_date);
+  `);
+
+  // Amorçage de la banque, une seule fois : ensuite elle vit en base et
+  // rejouer ce fichier n'écrase pas les sujets que Luc a édités ou écartés.
+  if (db.prepare('SELECT COUNT(*) AS n FROM content_topics').get().n === 0) {
+    const insTopic = db.prepare(
+      'INSERT INTO content_topics (id, pillar, title, angle, sort_order) VALUES (?, ?, ?, ?, ?)'
+    );
+    const seedTopics = db.transaction(() => {
+      SEED_TOPICS.forEach(([pillar, title, angle], i) => {
+        insTopic.run(randomBytes(8).toString('hex'), pillar, title, angle, (i + 1) * 10);
+      });
+    });
+    seedTopics();
+  }
 }
 
 export default db;

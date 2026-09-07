@@ -9,6 +9,7 @@ import Automation from './components/Automation.jsx';
 import Analytics from './components/Analytics.jsx';
 import SizeChart from './components/SizeChart.jsx';
 import Products from './components/Products.jsx';
+import Content from './components/Content.jsx';
 
 const TABS = [
   { id: 'dashboard', label: 'Dashboard' },
@@ -20,6 +21,7 @@ const TABS = [
   { id: 'analytics', label: 'Analytics' },
   { id: 'products',  label: 'Produits'  },
   { id: 'sizes',     label: 'Size chart' },
+  { id: 'content',   label: 'Contenu'   },
   { id: 'automation', label: 'Automation' },
 ];
 
@@ -163,6 +165,7 @@ export default function App() {
         )}
         {view === 'reports' && <Reports key={`rep-${refreshKey}`} />}
         {view === 'analytics' && <Analytics key={`analytics-${refreshKey}`} />}
+        {view === 'content' && <Content key={`content-${refreshKey}`} notify={notify} />}
         {view === 'automation' && <Automation key={`auto-${refreshKey}`} notify={notify} />}
       </main>
 
