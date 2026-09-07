@@ -4,15 +4,31 @@ export function isEmailConfigured() {
   return !!process.env.RESEND_API_KEY;
 }
 
+// Accepts one address, an array, or a comma-separated string — so a single
+// notification setting can name several people. Trims and drops blanks, which
+// is what "luc@x.com, luca@y.com " turns into when typed by a human.
+function addresses(value) {
+  return (Array.isArray(value) ? value : String(value ?? '').split(','))
+    .map((a) => String(a).trim())
+    .filter(Boolean);
+}
+
 // { to, subject, text, html?, attachments?, cc? } -> { ok, id?, error? }
 // `html`/`attachments`/`cc` are optional — existing callers passing none of
-// them are unaffected. `attachments`: [{ filename, content: Buffer }]. `cc`:
-// string or string[] — e.g. so Luc gets his own copy of a client-facing
-// email (order recap) without a second near-duplicate send.
+// them are unaffected. `attachments`: [{ filename, content: Buffer }].
+// `to` and `cc` each take one address, an array, or a comma-separated list:
+// every internal alert setting is a single text field, and a business with two
+// partners needs both of them on it without a second near-duplicate send.
 export async function sendEmail({ to, subject, text, html, attachments, cc }) {
   if (!isEmailConfigured()) {
     return { ok: false, error: 'RESEND_API_KEY not configured' };
   }
+
+  const recipients = addresses(to);
+  const copies = addresses(cc);
+  // Better a clear error than a call to Resend with an empty recipient list,
+  // which fails opaquely and looks like an outage.
+  if (!recipients.length) return { ok: false, error: 'No recipient' };
   const from = process.env.EMAIL_FROM || 'SLY <onboarding@resend.dev>';
 
   // Overridable so tests can point at a local recorder and assert which
@@ -29,11 +45,11 @@ export async function sendEmail({ to, subject, text, html, attachments, cc }) {
     },
     body: JSON.stringify({
       from,
-      to: [to],
+      to: recipients,
       subject,
       text,
       ...(html ? { html } : {}),
-      ...(cc ? { cc: Array.isArray(cc) ? cc : [cc] } : {}),
+      ...(copies.length ? { cc: copies } : {}),
       ...(attachments?.length ? {
         attachments: attachments.map((a) => ({
           filename: a.filename,

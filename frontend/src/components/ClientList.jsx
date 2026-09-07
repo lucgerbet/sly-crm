@@ -211,23 +211,32 @@ export default function ClientList({ onSelect, onNew, notify, initialFilters = {
               onClick={() => onSelect(c.id)}
             >
               <div>
-                <div className="flex items-center gap-1.5 flex-wrap">
-                  <span className="text-sm font-medium text-ink-primary">{name}</span>
+                {/* Name alone on its line, badges on the next. Inline badges
+                    used to ride along after the name, so a two-line name pushed
+                    them out of line with every other row — the badge column has
+                    to be scannable down the list, which means its position must
+                    not depend on how long someone's name is. */}
+                <div className="text-sm font-medium text-ink-primary leading-snug">{name}</div>
+                <div className="flex items-center gap-1.5 flex-wrap mt-1">
                   {CONTACT_TYPE_BADGE[c.contact_type] && (
-                    <span className={`text-[9px] font-medium px-1.5 py-0.5 rounded-full ${CONTACT_TYPE_BADGE[c.contact_type].color}`}>
+                    <span className={`text-[9px] font-medium px-1.5 py-0.5 rounded-full shrink-0 ${CONTACT_TYPE_BADGE[c.contact_type].color}`}>
                       {CONTACT_TYPE_BADGE[c.contact_type].label}
                     </span>
                   )}
                   {srcCfg && (
-                    <span className={`text-[9px] font-medium px-1.5 py-0.5 rounded-full ${srcCfg.color}`}>
+                    <span className={`text-[9px] font-medium px-1.5 py-0.5 rounded-full shrink-0 ${srcCfg.color}`}>
                       {srcCfg.label}
                     </span>
                   )}
+                  {/* The source badge already says where a recognised lead came
+                      from — repeating "sly-shop-lead" here would be noise. A
+                      hand-typed source has no badge, so it still shows. */}
+                  {[c.city, srcCfg ? null : c.source].filter(Boolean).length > 0 && (
+                    <span className="text-[11px] text-ink-secondary truncate">
+                      {[c.city, srcCfg ? null : c.source].filter(Boolean).join(' · ')}
+                    </span>
+                  )}
                 </div>
-                {/* The badge above already says where a recognised source came
-                    from — repeating "sly-shop-lead" here would be noise. A
-                    hand-typed source has no badge, so it still shows. */}
-                <div className="text-[11px] text-ink-secondary">{[c.city, srcCfg ? null : c.source].filter(Boolean).join(' · ') || '—'}</div>
                 {c.assigned_to && (
                   <div className="text-[10px] text-accent font-medium mt-0.5">→ {c.assigned_to}</div>
                 )}
