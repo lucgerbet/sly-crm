@@ -455,13 +455,13 @@ function SlideCard({ post, slide, index, total, pillarColor, onChange, reload, n
 function TopicBank({ data, pillarLabel, reload, notify }) {
   const [draft, setDraft] = useState({ pillar: 'anatomie', title: '', angle: '' });
   const [adding, setAdding] = useState(false);
-  // Deux filtres indépendants : de quoi ça parle, et ce qu'il reste à tourner.
+  // Deux filtres indépendants : de quoi ça parle, et ce qu'il reste à faire.
   const [pillar, setPillar] = useState('all');
-  const [videoOnly, setVideoOnly] = useState(false);
+  const [todoOnly, setTodoOnly] = useState(false);
 
   const visible = data.topics
     .filter((t) => (pillar === 'all' || t.pillar === pillar))
-    .filter((t) => (!videoOnly || !t.video_shot))
+    .filter((t) => (!todoOnly || !t.produced))
     // Regroupé par pilier puis dans l'ordre de la banque : un sujet ajouté à la
     // main se range avec les siens au lieu d'atterrir tout en bas.
     .sort((a, b) => (a.pillar === b.pillar
@@ -470,7 +470,7 @@ function TopicBank({ data, pillarLabel, reload, notify }) {
 
   const idle = visible.filter((t) => t.status === 'idle');
   const used = visible.filter((t) => t.status !== 'idle');
-  const toShoot = data.topics.filter((t) => !t.video_shot).length;
+  const toProduce = data.topics.filter((t) => !t.produced).length;
 
   async function add() {
     if (!draft.title.trim()) return;
@@ -542,14 +542,14 @@ function TopicBank({ data, pillarLabel, reload, notify }) {
             </button>
           ))}
           <button
-            onClick={() => setVideoOnly((v) => !v)}
+            onClick={() => setTodoOnly((v) => !v)}
             className={`ml-auto px-2.5 py-1 rounded-md text-[13px] border transition-colors ${
-              videoOnly
+              todoOnly
                 ? 'bg-accent text-white border-accent'
                 : 'border-line text-ink-secondary hover:text-ink-primary'
             }`}
           >
-            Vidéo à tourner ({toShoot})
+            Reste à produire ({toProduce})
           </button>
         </div>
       </div>
@@ -582,19 +582,20 @@ function TopicTable({ title, rows, pillarLabel, reload, notify, muted }) {
 function TopicRow({ topic, pillarLabel, reload, notify, muted }) {
   const [busy, setBusy] = useState(false);
 
-  // Le tournage se suit ici parce que c'est ici qu'on décide quoi tourner : la
-  // liste des sujets est la même que celle des vidéos à faire.
-  async function toggleVideo() {
+  // La production se suit ici parce que c'est ici qu'on décide quoi faire : la
+  // liste des sujets est la même que celle du contenu à produire, quel que
+  // soit le format — carousel, vidéo, autre chose.
+  async function toggleProduced() {
     setBusy(true);
     try {
-      await api.updateTopic(topic.id, { videoShot: !topic.video_shot });
+      await api.updateTopic(topic.id, { produced: !topic.produced });
       await reload();
-      notify?.(topic.video_shot ? 'Repassé en « à tourner »' : 'Vidéo marquée tournée');
+      notify?.(topic.produced ? 'Repassé en « à produire »' : 'Marqué produit');
     } catch (e) { notify?.(e.message, 'error'); }
     finally { setBusy(false); }
   }
 
-  const shot = !!topic.video_shot;
+  const produced = !!topic.produced;
 
   return (
     <div className={`px-4 py-2.5 flex items-start gap-3 ${muted ? 'opacity-70' : ''}`}>
@@ -606,18 +607,18 @@ function TopicRow({ topic, pillarLabel, reload, notify, muted }) {
         {topic.angle && <div className="text-[13px] text-ink-secondary">{topic.angle}</div>}
       </div>
       <button
-        onClick={toggleVideo}
+        onClick={toggleProduced}
         disabled={busy}
-        title={shot
-          ? `Tournée le ${new Date(topic.video_shot_at).toLocaleDateString('fr-FR')} — cliquer pour annuler`
-          : 'Marquer la vidéo comme tournée'}
+        title={produced
+          ? `Produit le ${new Date(topic.produced_at).toLocaleDateString('fr-FR')} — cliquer pour annuler`
+          : 'Marquer ce contenu comme produit'}
         className={`shrink-0 px-2.5 py-1 rounded-md text-[12px] border transition-colors ${
-          shot
+          produced
             ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
             : 'border-line text-ink-secondary hover:border-accent hover:text-ink-primary'
         }`}
       >
-        {shot ? '✓ Vidéo tournée' : 'Vidéo à tourner'}
+        {produced ? '✓ Produit' : 'À produire'}
       </button>
       {!muted && (
         <button

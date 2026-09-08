@@ -230,20 +230,20 @@ router.patch('/topics/:id', (req, res) => {
   const row = db.prepare('SELECT * FROM content_topics WHERE id = ?').get(req.params.id);
   if (!row) return res.status(404).json({ error: 'Not found' });
   const b = req.body || {};
-  // La date de tournage suit le drapeau : la repasser à « à tourner » l'efface,
-  // plutôt que de laisser une date qui ne correspond plus à rien.
-  const videoShot = b.videoShot === undefined ? !!row.video_shot : !!b.videoShot;
+  // La date suit le drapeau : repasser en « à produire » l'efface, plutôt que
+  // de laisser une date qui ne correspond plus à rien.
+  const produced = b.produced === undefined ? !!row.produced : !!b.produced;
   db.prepare(`
     UPDATE content_topics
-       SET pillar = ?, title = ?, angle = ?, status = ?, video_shot = ?, video_shot_at = ?
+       SET pillar = ?, title = ?, angle = ?, status = ?, produced = ?, produced_at = ?
      WHERE id = ?
   `).run(
     b.pillar ?? row.pillar,
     b.title ?? row.title,
     b.angle ?? row.angle,
     ['idle', 'used', 'dropped'].includes(b.status) ? b.status : row.status,
-    videoShot ? 1 : 0,
-    videoShot ? (row.video_shot_at || new Date().toISOString()) : null,
+    produced ? 1 : 0,
+    produced ? (row.produced_at || new Date().toISOString()) : null,
     req.params.id
   );
   res.json({ topic: db.prepare('SELECT * FROM content_topics WHERE id = ?').get(req.params.id) });

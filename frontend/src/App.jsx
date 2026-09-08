@@ -79,8 +79,8 @@ export default function App() {
   return (
     <div className="min-h-screen bg-bg text-ink-primary">
       <header className="sticky top-0 z-20 bg-bg/95 backdrop-blur border-b border-line">
-        <div className="max-w-7xl mx-auto px-6 h-14 flex items-center justify-between">
-          <div className="flex items-center gap-3">
+        <div className="max-w-7xl mx-auto px-6 h-14 flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3 shrink-0">
             <div className="w-8 h-8 rounded-md bg-accent text-white flex items-center justify-center font-medium text-xs tracking-wider">
               SLY
             </div>
@@ -89,13 +89,17 @@ export default function App() {
               <div className="text-[10px] text-ink-secondary uppercase tracking-[0.12em]">CRM</div>
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            <nav className="flex items-center gap-1">
+          {/* min-w-0 + overflow : au onzième onglet, la barre débordait sur le
+              logo et les libellés en deux mots passaient à la ligne. Elle
+              défile maintenant au lieu de se replier, quel que soit le nombre
+              d'onglets et la largeur d'écran. */}
+          <div className="flex items-center gap-2 min-w-0">
+            <nav className="flex items-center gap-0.5 overflow-x-auto no-scrollbar min-w-0">
               {TABS.map(tab => (
                 <button
                   key={tab.id}
                   onClick={() => setView(tab.id)}
-                  className={`px-3.5 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                  className={`px-3 py-1.5 rounded-md text-[13px] font-medium whitespace-nowrap shrink-0 transition-colors ${
                     view === tab.id ? 'bg-accent text-white' : 'text-ink-secondary hover:text-ink-primary'
                   }`}
                 >
@@ -108,7 +112,7 @@ export default function App() {
               target="_blank"
               rel="noreferrer"
               title="Ouvre l'outil de prise de commande dans un nouvel onglet"
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium border border-line text-ink-secondary hover:text-ink-primary hover:border-ink-secondary transition-colors whitespace-nowrap"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[13px] font-medium border border-line text-ink-secondary hover:text-ink-primary hover:border-ink-secondary transition-colors whitespace-nowrap shrink-0"
             >
               Prise de commande
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
@@ -120,7 +124,7 @@ export default function App() {
             <button
               onClick={handleManualRefresh}
               title="Refresh"
-              className="w-8 h-8 flex items-center justify-center rounded-md text-ink-secondary hover:text-ink-primary hover:bg-line/50 transition-colors"
+              className="w-8 h-8 shrink-0 flex items-center justify-center rounded-md text-ink-secondary hover:text-ink-primary hover:bg-line/50 transition-colors"
             >
               <svg
                 width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"

@@ -979,12 +979,19 @@ export function migrate() {
     CREATE INDEX IF NOT EXISTS idx_content_posts_date ON content_posts(publish_date);
   `);
 
-  // Suivi vidéo. Un sujet de la banque ne sert pas qu'au carousel : Luc tourne
-  // aussi des vidéos dessus, et les deux n'avancent pas au même rythme. Le
-  // tournage a donc son propre état, indépendant de `status` (qui, lui, ne
-  // parle que du carousel).
-  addColumn('content_topics', 'video_shot', 'INTEGER DEFAULT 0');
-  addColumn('content_topics', 'video_shot_at', 'TEXT');
+  // Suivi de production. Un sujet de la banque n'est pas qu'un carousel : il
+  // peut aussi devenir une vidéo, un post, un mail. La production a donc son
+  // propre état, indépendant de `status` (qui, lui, ne parle que du carousel
+  // automatique).
+  //
+  // Renommé depuis `video_shot` le 2026-09-08 : le drapeau avait été introduit
+  // le matin même comme spécifique à la vidéo, alors qu'il vaut pour tout
+  // contenu. Le try/catch couvre les deux cas — base déjà renommée, ou base
+  // neuve où la colonne d'origine n'a jamais existé.
+  try { db.exec('ALTER TABLE content_topics RENAME COLUMN video_shot TO produced'); } catch (_) { /* déjà fait */ }
+  try { db.exec('ALTER TABLE content_topics RENAME COLUMN video_shot_at TO produced_at'); } catch (_) { /* déjà fait */ }
+  addColumn('content_topics', 'produced', 'INTEGER DEFAULT 0');
+  addColumn('content_topics', 'produced_at', 'TEXT');
 
   // Amorçage de la banque, une seule fois : ensuite elle vit en base et
   // rejouer ce fichier n'écrase pas les sujets que Luc a édités ou écartés.

@@ -46,6 +46,11 @@
   }
 }
 
+/* Une barre qui défile sans afficher d'ascenseur : la nav du header, où un
+   ascenseur de 6px sous les onglets ferait tache. */
+.no-scrollbar { scrollbar-width: none; }
+.no-scrollbar::-webkit-scrollbar { display: none; }
+
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-thumb { background: #d8d8d2; border-radius: 8px; }
 ::-webkit-scrollbar-track { background: transparent; }
