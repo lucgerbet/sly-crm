@@ -108,4 +108,12 @@ export const api = {
     method: 'PUT', headers: { 'Content-Type': file.type }, body: file,
   }),
   deleteSlideImage: (id, n) => request(`/content/posts/${id}/slides/${n}/image`, { method: 'DELETE' }),
+
+  contentPerformance: () => request('/content/performance'),
+  createPublication: (data) => request('/content/publications', { method: 'POST', body: JSON.stringify(data) }),
+  updatePublication: (id, data) =>
+    request(`/content/publications/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  deletePublication: (id) => request(`/content/publications/${id}`, { method: 'DELETE' }),
+  saveMetrics: (id, checkpoint, data) =>
+    request(`/content/publications/${id}/metrics/${checkpoint}`, { method: 'PUT', body: JSON.stringify(data) }),
 };

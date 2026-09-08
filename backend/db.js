@@ -979,6 +979,76 @@ export function migrate() {
     CREATE INDEX IF NOT EXISTS idx_content_posts_date ON content_posts(publish_date);
   `);
 
+  // ————————————————————————————————————————————————————————————————
+  // Performances du contenu publié (2026-09-08)
+  //
+  // Deux tables plutôt qu'une, pour deux raisons :
+  //
+  // 1. Un même contenu vit sur plusieurs plateformes et n'y fait pas les mêmes
+  //    chiffres. La publication est donc le couple (contenu, plateforme), pas
+  //    le contenu.
+  // 2. Un post se mesure DEUX fois — à J+3 et à J+30. Sans ça on compare un
+  //    post d'hier à un post de trois mois, et toute conclusion est fausse.
+  //    Les relevés sont donc des lignes, pas des colonnes.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS content_publications (
+      id TEXT PRIMARY KEY,
+
+      -- L'un OU l'autre : un carousel écrit par la routine, ou un contenu
+      -- publié hors CRM (une vidéo, un post improvisé) rattaché à son sujet.
+      post_id TEXT,
+      topic_id TEXT,
+
+      title TEXT NOT NULL,
+      -- Le pilier est COPIÉ ici à la publication, pas lu par jointure : si le
+      -- pilier d'un sujet est corrigé plus tard, l'historique de performance
+      -- ne doit pas se réécrire tout seul.
+      pillar TEXT,
+
+      platform TEXT NOT NULL,   -- instagram | tiktok | facebook | linkedin
+      format TEXT,              -- carousel | reel | photo | texte
+      published_at TEXT NOT NULL,
+      url TEXT,
+      notes TEXT,
+
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now')),
+
+      FOREIGN KEY (post_id) REFERENCES content_posts(id) ON DELETE SET NULL,
+      FOREIGN KEY (topic_id) REFERENCES content_topics(id) ON DELETE SET NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS content_metrics (
+      id TEXT PRIMARY KEY,
+      publication_id TEXT NOT NULL,
+      checkpoint TEXT NOT NULL,      -- j3 | j30
+      measured_at TEXT,
+
+      -- Tout est nullable : les plateformes ne donnent pas les mêmes chiffres,
+      -- et un zéro saisi par défaut mentirait là où l'absence de donnée dit
+      -- simplement « non mesurable ici ».
+      views INTEGER,
+      reach INTEGER,
+      likes INTEGER,
+      comments INTEGER,
+      shares INTEGER,
+      saves INTEGER,
+      follows INTEGER,
+      link_clicks INTEGER,
+
+      created_at TEXT DEFAULT (datetime('now')),
+
+      FOREIGN KEY (publication_id) REFERENCES content_publications(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_pubs_published ON content_publications(published_at);
+    CREATE INDEX IF NOT EXISTS idx_pubs_platform ON content_publications(platform);
+    CREATE INDEX IF NOT EXISTS idx_pubs_post ON content_publications(post_id);
+    -- Un seul relevé par échéance : re-saisir J+3 corrige, il ne s'empile pas.
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_metrics_pub_checkpoint
+      ON content_metrics(publication_id, checkpoint);
+  `);
+
   // Suivi de production. Un sujet de la banque n'est pas qu'un carousel : il
   // peut aussi devenir une vidéo, un post, un mail. La production a donc son
   // propre état, indépendant de `status` (qui, lui, ne parle que du carousel

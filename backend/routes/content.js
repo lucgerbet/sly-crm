@@ -107,7 +107,10 @@ router.get('/next-topic', requireIntakeSecret, (_req, res) => {
   const recent = db.prepare(
     'SELECT title, pillar, publish_date FROM content_posts ORDER BY created_at DESC LIMIT 15'
   ).all();
-  res.json({ topic, topicsLeft: left, recent, pillars: PILLARS });
+  // Performance par pilier — vide tant que rien n'est mesuré, ce qui est le
+  // comportement voulu : on ne biaise pas une rotation sur zéro donnée.
+  const pillarStats = aggregate(publicationsWithMetrics(), 'pillar').filter((g) => g.n >= 3);
+  res.json({ topic, topicsLeft: left, recent, pillars: PILLARS, pillarStats });
 });
 
 // —— Écriture ————————————————————————————————————————————————————————
@@ -251,6 +254,205 @@ router.patch('/topics/:id', (req, res) => {
 
 router.delete('/topics/:id', (req, res) => {
   db.prepare('DELETE FROM content_topics WHERE id = ?').run(req.params.id);
+  res.json({ ok: true });
+});
+
+// —— Performances ————————————————————————————————————————————————————
+//
+// Ce que les plateformes ne diront jamais : quel PILIER marche, quel format
+// tient, quel jour porte. Instagram connaît ses chiffres mais pas ta ligne
+// éditoriale ; le CRM connaît les deux, et c'est tout l'intérêt de mesurer ici.
+
+export const PLATFORMS = ['instagram', 'tiktok', 'facebook', 'linkedin'];
+const CHECKPOINTS = ['j3', 'j30'];
+const CHECKPOINT_DAYS = { j3: 3, j30: 30 };
+const METRIC_FIELDS = ['views', 'reach', 'likes', 'comments', 'shares', 'saves', 'follows', 'link_clicks'];
+
+const today = () => new Date().toISOString().slice(0, 10);
+const addDays = (isoDate, n) => {
+  const d = new Date(`${isoDate}T12:00:00`);
+  d.setDate(d.getDate() + n);
+  return d.toISOString().slice(0, 10);
+};
+
+// L'engagement se rapporte à la portée quand on l'a, aux vues sinon. Mélanger
+// les deux dans une même moyenne comparerait des taux qui ne mesurent pas la
+// même chose — d'où `base`, exposé pour que l'écran puisse le dire.
+function derive(metrics) {
+  const m = metrics || {};
+  const interactions = ['likes', 'comments', 'shares', 'saves']
+    .map((k) => m[k])
+    .filter((v) => v != null)
+    .reduce((a, b) => a + b, 0);
+  const base = m.reach ?? m.views ?? null;
+  return {
+    interactions: interactions || null,
+    base,
+    baseKind: m.reach != null ? 'reach' : (m.views != null ? 'views' : null),
+    engagementRate: base ? Math.round((interactions / base) * 1000) / 10 : null,
+  };
+}
+
+function publicationsWithMetrics() {
+  const pubs = db.prepare('SELECT * FROM content_publications ORDER BY published_at DESC, created_at DESC').all();
+  const metrics = db.prepare('SELECT * FROM content_metrics').all();
+  return pubs.map((p) => {
+    const own = {};
+    metrics.filter((m) => m.publication_id === p.id).forEach((m) => { own[m.checkpoint] = m; });
+    return { ...p, metrics: own, derived: { j3: derive(own.j3), j30: derive(own.j30) } };
+  });
+}
+
+// Les moyennes ne portent que sur J+3 : c'est la seule fenêtre où tous les
+// posts sont comparables entre eux, quel que soit leur âge.
+function aggregate(pubs, key) {
+  const groups = new Map();
+  pubs.forEach((p) => {
+    const m = p.metrics.j3;
+    if (!m) return;
+    const g = typeof key === 'function' ? key(p) : p[key];
+    if (!g) return;
+    if (!groups.has(g)) groups.set(g, { key: g, n: 0, views: [], rates: [] });
+    const entry = groups.get(g);
+    entry.n += 1;
+    const v = m.views ?? m.reach;
+    if (v != null) entry.views.push(v);
+    const r = p.derived.j3.engagementRate;
+    if (r != null) entry.rates.push(r);
+  });
+  const avg = (a) => (a.length ? Math.round((a.reduce((x, y) => x + y, 0) / a.length) * 10) / 10 : null);
+  return [...groups.values()]
+    .map((g) => ({ key: g.key, n: g.n, avgViews: avg(g.views), avgEngagementRate: avg(g.rates) }))
+    .sort((a, b) => (b.avgEngagementRate ?? -1) - (a.avgEngagementRate ?? -1));
+}
+
+const WEEKDAYS = ['dimanche', 'lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi'];
+
+router.get('/performance', (_req, res) => {
+  const pubs = publicationsWithMetrics();
+  const t = today();
+
+  // Ce qu'il y a à relever aujourd'hui. Sans cette file, un relevé à J+30 ne
+  // se fait jamais : personne ne tient un calendrier de mesures dans sa tête.
+  const due = [];
+  pubs.forEach((p) => {
+    CHECKPOINTS.forEach((c) => {
+      if (!p.metrics[c] && addDays(p.published_at, CHECKPOINT_DAYS[c]) <= t) {
+        due.push({ publicationId: p.id, checkpoint: c, title: p.title, platform: p.platform, publishedAt: p.published_at });
+      }
+    });
+  });
+
+  const measured = pubs.filter((p) => p.metrics.j3).length;
+  res.json({
+    publications: pubs,
+    due,
+    platforms: PLATFORMS,
+    stats: {
+      measured,
+      byPillar: aggregate(pubs, 'pillar'),
+      byPlatform: aggregate(pubs, 'platform'),
+      byFormat: aggregate(pubs, 'format'),
+      byWeekday: aggregate(pubs, (p) => WEEKDAYS[new Date(`${p.published_at}T12:00:00`).getDay()]),
+    },
+  });
+});
+
+// Publier un carousel sur trois plateformes crée trois lignes : même contenu,
+// trois audiences, trois résultats.
+router.post('/publications', (req, res) => {
+  const b = req.body || {};
+  const platforms = (Array.isArray(b.platforms) ? b.platforms : [b.platform])
+    .filter((p) => PLATFORMS.includes(p));
+  if (!platforms.length) return res.status(400).json({ error: 'Au moins une plateforme' });
+
+  const post = b.postId ? db.prepare('SELECT * FROM content_posts WHERE id = ?').get(b.postId) : null;
+  const topic = b.topicId ? db.prepare('SELECT * FROM content_topics WHERE id = ?').get(b.topicId) : null;
+  const title = String(b.title || post?.title || topic?.title || '').trim();
+  if (!title) return res.status(400).json({ error: 'Titre requis' });
+
+  const created = [];
+  const ins = db.prepare(`
+    INSERT INTO content_publications (id, post_id, topic_id, title, pillar, platform, format, published_at, url, notes)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+  db.transaction(() => {
+    platforms.forEach((platform) => {
+      const id = newId();
+      ins.run(
+        id, post?.id || null, topic?.id || post?.topic_id || null, title.slice(0, 200),
+        b.pillar || post?.pillar || topic?.pillar || null,
+        platform,
+        b.format || (post ? 'carousel' : null),
+        b.publishedAt || post?.publish_date || today(),
+        b.url || null, b.notes || null
+      );
+      created.push(id);
+    });
+  })();
+  res.status(201).json({ created: created.length });
+});
+
+router.patch('/publications/:id', (req, res) => {
+  const row = db.prepare('SELECT * FROM content_publications WHERE id = ?').get(req.params.id);
+  if (!row) return res.status(404).json({ error: 'Not found' });
+  const b = req.body || {};
+  db.prepare(`
+    UPDATE content_publications
+       SET title = ?, pillar = ?, platform = ?, format = ?, published_at = ?, url = ?, notes = ?,
+           updated_at = datetime('now')
+     WHERE id = ?
+  `).run(
+    b.title ?? row.title,
+    b.pillar ?? row.pillar,
+    PLATFORMS.includes(b.platform) ? b.platform : row.platform,
+    b.format ?? row.format,
+    b.publishedAt ?? row.published_at,
+    b.url ?? row.url,
+    b.notes ?? row.notes,
+    req.params.id
+  );
+  res.json({ ok: true });
+});
+
+router.delete('/publications/:id', (req, res) => {
+  db.prepare('DELETE FROM content_metrics WHERE publication_id = ?').run(req.params.id);
+  db.prepare('DELETE FROM content_publications WHERE id = ?').run(req.params.id);
+  res.json({ ok: true });
+});
+
+// Un relevé se corrige, il ne s'empile pas : re-saisir J+3 remplace le
+// précédent (index unique sur publication_id + checkpoint).
+router.put('/publications/:id/metrics/:checkpoint', (req, res) => {
+  const row = db.prepare('SELECT * FROM content_publications WHERE id = ?').get(req.params.id);
+  if (!row) return res.status(404).json({ error: 'Not found' });
+  const checkpoint = req.params.checkpoint;
+  if (!CHECKPOINTS.includes(checkpoint)) return res.status(400).json({ error: 'Relevé inconnu' });
+
+  const b = req.body || {};
+  // Un champ laissé vide reste NULL : « non mesuré » et « zéro » ne sont pas
+  // la même chose, et confondre les deux fausserait toutes les moyennes.
+  const values = METRIC_FIELDS.map((f) => {
+    const raw = b[f] ?? b[f.replace(/_([a-z])/g, (_, c) => c.toUpperCase())];
+    if (raw === '' || raw == null) return null;
+    const n = Number(raw);
+    return Number.isFinite(n) && n >= 0 ? Math.round(n) : null;
+  });
+
+  const existing = db.prepare('SELECT id FROM content_metrics WHERE publication_id = ? AND checkpoint = ?')
+    .get(req.params.id, checkpoint);
+  if (existing) {
+    db.prepare(`
+      UPDATE content_metrics
+         SET measured_at = ?, ${METRIC_FIELDS.map((f) => `${f} = ?`).join(', ')}
+       WHERE id = ?
+    `).run(today(), ...values, existing.id);
+  } else {
+    db.prepare(`
+      INSERT INTO content_metrics (id, publication_id, checkpoint, measured_at, ${METRIC_FIELDS.join(', ')})
+      VALUES (?, ?, ?, ?, ${METRIC_FIELDS.map(() => '?').join(', ')})
+    `).run(newId(), req.params.id, checkpoint, today(), ...values);
+  }
   res.json({ ok: true });
 });
 

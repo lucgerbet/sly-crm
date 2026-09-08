@@ -8,6 +8,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { api } from '../api.js';
 import { imageUrl, downloadAllSlides, downloadSlide } from '../slideRender.js';
+import ContentPerf, { PlatformPicker } from './ContentPerf.jsx';
 
 const STATUS = {
   to_illustrate: { label: 'À illustrer', tone: 'bg-amber-50 text-amber-800 border-amber-200' },
@@ -72,6 +73,7 @@ export default function Content({ notify }) {
     ['published', `Publié (${data.counts.published})`],
     ['all', 'Tout'],
     ['topics', `Banque de sujets (${data.counts.topicsLeft})`],
+    ['perf', 'Performances'],
   ];
 
   return (
@@ -92,7 +94,9 @@ export default function Content({ notify }) {
         ))}
       </div>
 
-      {tab === 'topics' ? (
+      {tab === 'perf' ? (
+        <ContentPerf pillarLabel={pillarLabel} notify={notify} />
+      ) : tab === 'topics' ? (
         <TopicBank data={data} pillarLabel={pillarLabel} reload={load} notify={notify} />
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-[340px_1fr] gap-4 items-start">
@@ -178,6 +182,7 @@ function PostDetail({ post, pillars, pillarColor, reload, notify }) {
   const [draft, setDraft] = useState(post);
   const [saving, setSaving] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [publishing, setPublishing] = useState(null); // { platforms, url }
   const dirty = JSON.stringify(draft) !== JSON.stringify(post);
 
   useEffect(() => { setDraft(post); }, [post.id, post.updated_at]);
@@ -274,7 +279,9 @@ function PostDetail({ post, pillars, pillarColor, reload, notify }) {
             Copier la légende
           </button>
           {post.status !== 'published'
-            ? <button className="af-btn-secondary" onClick={() => setStatus('published')}>Marquer publié</button>
+            ? <button className="af-btn-secondary" onClick={() => setPublishing({ platforms: [], url: '' })}>
+                Marquer publié
+              </button>
             : <button className="af-btn-secondary" onClick={() => setStatus('ready')}>Repasser en « prêt »</button>}
           {dirty && (
             <button className="af-btn-primary" disabled={saving} onClick={() => save()}>
@@ -283,6 +290,16 @@ function PostDetail({ post, pillars, pillarColor, reload, notify }) {
           )}
           <button className="af-btn-secondary ml-auto text-red-700" onClick={remove}>Supprimer</button>
         </div>
+
+        {publishing && (
+          <PublishPanel
+            post={post}
+            draft={publishing}
+            setDraft={setPublishing}
+            onDone={async () => { setPublishing(null); await setStatus('published'); }}
+            notify={notify}
+          />
+        )}
 
         {missing > 0 && (
           <p className="text-[13px] text-ink-secondary mt-3">
@@ -333,6 +350,62 @@ function PostDetail({ post, pillars, pillarColor, reload, notify }) {
           </button>
         )}
       </div>
+    </div>
+  );
+}
+
+// Marquer publié n'est pas qu'un changement de statut : c'est le moment où
+// naissent les lignes de suivi, une par plateforme. Les demander ici plutôt
+// que plus tard évite le trou classique — un post publié dont personne ne sait
+// où il est parti, donc qu'on ne mesurera jamais.
+function PublishPanel({ post, draft, setDraft, onDone, notify }) {
+  const [saving, setSaving] = useState(false);
+
+  async function confirm() {
+    if (!draft.platforms.length) { notify?.('Choisis au moins une plateforme', 'error'); return; }
+    setSaving(true);
+    try {
+      await api.createPublication({
+        postId: post.id,
+        platforms: draft.platforms,
+        format: 'carousel',
+        publishedAt: new Date().toISOString().slice(0, 10),
+        url: draft.url || null,
+      });
+      await onDone();
+      notify?.(`Suivi créé sur ${draft.platforms.length} plateforme${draft.platforms.length > 1 ? 's' : ''}`);
+    } catch (e) { notify?.(e.message, 'error'); setSaving(false); }
+  }
+
+  return (
+    <div className="border border-line rounded-lg p-4 mt-4 bg-[#FAF9F6] space-y-3">
+      <div className="af-label">Publié sur quelles plateformes ?</div>
+      <PlatformPicker
+        platforms={['instagram', 'tiktok', 'facebook', 'linkedin']}
+        selected={draft.platforms}
+        onToggle={(p) => setDraft({
+          ...draft,
+          platforms: draft.platforms.includes(p)
+            ? draft.platforms.filter((x) => x !== p)
+            : [...draft.platforms, p],
+        })}
+      />
+      <input
+        value={draft.url}
+        onChange={(e) => setDraft({ ...draft, url: e.target.value })}
+        placeholder="Lien du post (optionnel — pratique pour retrouver les chiffres)"
+        className="af-input"
+      />
+      <div className="flex gap-2">
+        <button className="af-btn-primary" disabled={saving} onClick={confirm}>
+          {saving ? 'Enregistrement…' : 'Confirmer'}
+        </button>
+        <button className="af-btn-secondary" onClick={() => setDraft(null)}>Annuler</button>
+      </div>
+      <p className="text-[12px] text-ink-secondary">
+        Le CRM te réclamera les chiffres dans trois jours, puis dans un mois, dans l'onglet
+        Performances.
+      </p>
     </div>
   );
 }
