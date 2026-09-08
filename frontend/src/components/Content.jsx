@@ -455,8 +455,22 @@ function SlideCard({ post, slide, index, total, pillarColor, onChange, reload, n
 function TopicBank({ data, pillarLabel, reload, notify }) {
   const [draft, setDraft] = useState({ pillar: 'anatomie', title: '', angle: '' });
   const [adding, setAdding] = useState(false);
-  const idle = data.topics.filter((t) => t.status === 'idle');
-  const used = data.topics.filter((t) => t.status !== 'idle');
+  // Deux filtres indépendants : de quoi ça parle, et ce qu'il reste à tourner.
+  const [pillar, setPillar] = useState('all');
+  const [videoOnly, setVideoOnly] = useState(false);
+
+  const visible = data.topics
+    .filter((t) => (pillar === 'all' || t.pillar === pillar))
+    .filter((t) => (!videoOnly || !t.video_shot))
+    // Regroupé par pilier puis dans l'ordre de la banque : un sujet ajouté à la
+    // main se range avec les siens au lieu d'atterrir tout en bas.
+    .sort((a, b) => (a.pillar === b.pillar
+      ? a.sort_order - b.sort_order
+      : (pillarLabel[a.pillar] || a.pillar).localeCompare(pillarLabel[b.pillar] || b.pillar)));
+
+  const idle = visible.filter((t) => t.status === 'idle');
+  const used = visible.filter((t) => t.status !== 'idle');
+  const toShoot = data.topics.filter((t) => !t.video_shot).length;
 
   async function add() {
     if (!draft.title.trim()) return;
@@ -475,25 +489,34 @@ function TopicBank({ data, pillarLabel, reload, notify }) {
       <div className="bg-surface border border-line rounded-xl p-5">
         <div className="af-label">Ajouter un sujet</div>
         <div className="flex flex-wrap gap-2 items-end">
-          <select
-            value={draft.pillar}
-            onChange={(e) => setDraft({ ...draft, pillar: e.target.value })}
-            className="af-select w-auto"
-          >
-            {data.pillars.map((p) => <option key={p.key} value={p.key}>{p.label}</option>)}
-          </select>
-          <input
-            value={draft.title}
-            onChange={(e) => setDraft({ ...draft, title: e.target.value })}
-            placeholder="Titre du sujet"
-            className="af-input flex-1 min-w-[220px]"
-          />
-          <input
-            value={draft.angle}
-            onChange={(e) => setDraft({ ...draft, angle: e.target.value })}
-            placeholder="L'angle, en une phrase"
-            className="af-input flex-1 min-w-[260px]"
-          />
+          <label className="block">
+            <span className="text-[10px] uppercase tracking-[0.06em] text-ink-secondary block mb-1">Pilier</span>
+            <select
+              value={draft.pillar}
+              onChange={(e) => setDraft({ ...draft, pillar: e.target.value })}
+              className="af-select w-auto"
+            >
+              {data.pillars.map((p) => <option key={p.key} value={p.key}>{p.label}</option>)}
+            </select>
+          </label>
+          <label className="block flex-1 min-w-[220px]">
+            <span className="text-[10px] uppercase tracking-[0.06em] text-ink-secondary block mb-1">Titre</span>
+            <input
+              value={draft.title}
+              onChange={(e) => setDraft({ ...draft, title: e.target.value })}
+              placeholder="Le cran du revers"
+              className="af-input"
+            />
+          </label>
+          <label className="block flex-1 min-w-[260px]">
+            <span className="text-[10px] uppercase tracking-[0.06em] text-ink-secondary block mb-1">Angle</span>
+            <input
+              value={draft.angle}
+              onChange={(e) => setDraft({ ...draft, angle: e.target.value })}
+              placeholder="En une phrase : ce qu'on veut faire comprendre"
+              className="af-input"
+            />
+          </label>
           <button className="af-btn-primary" disabled={adding} onClick={add}>Ajouter</button>
         </div>
         <p className="text-[13px] text-ink-secondary mt-3">
@@ -502,8 +525,40 @@ function TopicBank({ data, pillarLabel, reload, notify }) {
         </p>
       </div>
 
+      <div className="bg-surface border border-line rounded-xl p-4">
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="text-[10px] uppercase tracking-[0.06em] text-ink-secondary mr-1">Filtrer</span>
+          {[['all', 'Tous'], ...data.pillars.map((p) => [p.key, p.label])].map(([key, label]) => (
+            <button
+              key={key}
+              onClick={() => setPillar(key)}
+              className={`px-2.5 py-1 rounded-md text-[13px] border transition-colors ${
+                pillar === key
+                  ? 'bg-accent text-white border-accent'
+                  : 'border-line text-ink-secondary hover:text-ink-primary'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+          <button
+            onClick={() => setVideoOnly((v) => !v)}
+            className={`ml-auto px-2.5 py-1 rounded-md text-[13px] border transition-colors ${
+              videoOnly
+                ? 'bg-accent text-white border-accent'
+                : 'border-line text-ink-secondary hover:text-ink-primary'
+            }`}
+          >
+            Vidéo à tourner ({toShoot})
+          </button>
+        </div>
+      </div>
+
       <TopicTable title={`À traiter — ${idle.length}`} rows={idle} pillarLabel={pillarLabel} reload={reload} notify={notify} />
       <TopicTable title={`Déjà traités — ${used.length}`} rows={used} pillarLabel={pillarLabel} reload={reload} notify={notify} muted />
+      {!idle.length && !used.length && (
+        <div className="af-card text-sm text-ink-secondary">Aucun sujet ne correspond à ce filtre.</div>
+      )}
     </div>
   );
 }
@@ -517,29 +572,65 @@ function TopicTable({ title, rows, pillarLabel, reload, notify, muted }) {
       </div>
       <div className="divide-y divide-line">
         {rows.map((t) => (
-          <div key={t.id} className={`px-4 py-2.5 flex items-start gap-3 ${muted ? 'opacity-60' : ''}`}>
-            <span className="text-[10px] uppercase tracking-[0.06em] text-ink-secondary w-40 shrink-0 pt-0.5">
-              {pillarLabel[t.pillar] || t.pillar}
-            </span>
-            <div className="flex-1 min-w-0">
-              <div className="text-sm">{t.title}</div>
-              {t.angle && <div className="text-[13px] text-ink-secondary">{t.angle}</div>}
-            </div>
-            {!muted && (
-              <button
-                className="text-[11px] text-ink-secondary hover:text-red-700 shrink-0"
-                onClick={async () => {
-                  await api.deleteTopic(t.id);
-                  await reload();
-                  notify?.('Sujet retiré');
-                }}
-              >
-                retirer
-              </button>
-            )}
-          </div>
+          <TopicRow key={t.id} topic={t} pillarLabel={pillarLabel} reload={reload} notify={notify} muted={muted} />
         ))}
       </div>
+    </div>
+  );
+}
+
+function TopicRow({ topic, pillarLabel, reload, notify, muted }) {
+  const [busy, setBusy] = useState(false);
+
+  // Le tournage se suit ici parce que c'est ici qu'on décide quoi tourner : la
+  // liste des sujets est la même que celle des vidéos à faire.
+  async function toggleVideo() {
+    setBusy(true);
+    try {
+      await api.updateTopic(topic.id, { videoShot: !topic.video_shot });
+      await reload();
+      notify?.(topic.video_shot ? 'Repassé en « à tourner »' : 'Vidéo marquée tournée');
+    } catch (e) { notify?.(e.message, 'error'); }
+    finally { setBusy(false); }
+  }
+
+  const shot = !!topic.video_shot;
+
+  return (
+    <div className={`px-4 py-2.5 flex items-start gap-3 ${muted ? 'opacity-70' : ''}`}>
+      <span className="text-[10px] uppercase tracking-[0.06em] text-ink-secondary w-40 shrink-0 pt-1">
+        {pillarLabel[topic.pillar] || topic.pillar}
+      </span>
+      <div className="flex-1 min-w-0">
+        <div className="text-sm">{topic.title}</div>
+        {topic.angle && <div className="text-[13px] text-ink-secondary">{topic.angle}</div>}
+      </div>
+      <button
+        onClick={toggleVideo}
+        disabled={busy}
+        title={shot
+          ? `Tournée le ${new Date(topic.video_shot_at).toLocaleDateString('fr-FR')} — cliquer pour annuler`
+          : 'Marquer la vidéo comme tournée'}
+        className={`shrink-0 px-2.5 py-1 rounded-md text-[12px] border transition-colors ${
+          shot
+            ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+            : 'border-line text-ink-secondary hover:border-accent hover:text-ink-primary'
+        }`}
+      >
+        {shot ? '✓ Vidéo tournée' : 'Vidéo à tourner'}
+      </button>
+      {!muted && (
+        <button
+          className="text-[11px] text-ink-secondary hover:text-red-700 shrink-0 pt-1.5"
+          onClick={async () => {
+            await api.deleteTopic(topic.id);
+            await reload();
+            notify?.('Sujet retiré');
+          }}
+        >
+          retirer
+        </button>
+      )}
     </div>
   );
 }

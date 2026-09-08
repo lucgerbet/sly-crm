@@ -979,6 +979,13 @@ export function migrate() {
     CREATE INDEX IF NOT EXISTS idx_content_posts_date ON content_posts(publish_date);
   `);
 
+  // Suivi vidéo. Un sujet de la banque ne sert pas qu'au carousel : Luc tourne
+  // aussi des vidéos dessus, et les deux n'avancent pas au même rythme. Le
+  // tournage a donc son propre état, indépendant de `status` (qui, lui, ne
+  // parle que du carousel).
+  addColumn('content_topics', 'video_shot', 'INTEGER DEFAULT 0');
+  addColumn('content_topics', 'video_shot_at', 'TEXT');
+
   // Amorçage de la banque, une seule fois : ensuite elle vit en base et
   // rejouer ce fichier n'écrase pas les sujets que Luc a édités ou écartés.
   if (db.prepare('SELECT COUNT(*) AS n FROM content_topics').get().n === 0) {
