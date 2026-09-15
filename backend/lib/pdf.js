@@ -492,17 +492,15 @@ export function buildProductionOrderPdf({ order, client, config, shopConfigSumma
   });
 }
 
-// Accounting-grade invoice, one per order — invoice number = order_number
-// (Luc's choice: one sequence, not a separate invoice-numbering scheme).
-// Pulls seller identity from `settings` (business_legal_name/address/siret/
-// vat_mention) rather than hardcoding it, since none of that was confirmed
-// at build time (2026-08-12) — business_vat_mention defaults to an loud,
-// unmissable placeholder rather than guessing a real "TVA non applicable"
-// or VAT-rate mention, because a wrong tax mention on a real invoice is a
-// genuine legal/accounting problem, not a cosmetic one. DO NOT send an
-// invoice to a real client until settings.business_vat_mention has been
-// confirmed with Luc's accountant and set to the real mention.
-export function buildInvoicePdf({ order, client, settings }) {
+// The invoice document. Renders from a frozen snapshot (see lib/invoices.js)
+// and from nothing else: no order row, no client row, no clock. Two invoices
+// generated from the same snapshot a year apart are byte-for-byte identical
+// in content, which is the whole point of a snapshot.
+//
+// `settings` is only consulted for the currency symbol. Seller identity and
+// the VAT mention come from the snapshot, because what the invoice said on
+// its issue date must not follow a later edit to the settings.
+export function buildInvoicePdf({ invoice, settings }) {
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({ margin: 56, size: 'A4' });
     const chunks = [];
@@ -510,69 +508,96 @@ export function buildInvoicePdf({ order, client, settings }) {
     doc.on('end', () => resolve(Buffer.concat(chunks)));
     doc.on('error', reject);
 
-    const money = (cents) => formatMoney(cents, settings.currency);
-    const invoiceNumber = order.order_number || order.id;
-    const issueDate = new Date().toLocaleDateString('fr-FR');
-    const saleDate = order.created_at
-      ? new Date(order.created_at).toLocaleDateString('fr-FR')
-      : issueDate;
-    const totalCents = (order.deposit_amount_cents || 0) + (order.balance_amount_cents || 0);
-    const productLabel = PRODUCT_LABELS[order.product_type] || order.product_type || 'Commande sur mesure';
-    const vatMention = settings.business_vat_mention
-      || '[MENTION TVA À CONFIRMER AVEC VOTRE COMPTABLE — ne pas envoyer telle quelle]';
+    const money = (cents) => formatMoney(cents, settings?.currency);
+    const fr = (iso) => (iso ? new Date(iso).toLocaleDateString('fr-FR') : '—');
+    const isDeposit = invoice.kind === 'deposit';
+    const title = isDeposit ? "FACTURE D'ACOMPTE" : 'FACTURE';
+    const seller = invoice.seller || {};
+    const client = invoice.client || {};
 
-    doc.font('Helvetica-Bold').fontSize(20).fillColor('#1A1A1A').text('FACTURE');
+    doc.font('Helvetica-Bold').fontSize(20).fillColor('#1A1A1A').text(title);
     doc.font('Helvetica').fontSize(10).fillColor('#666666')
-      .text(`N° ${invoiceNumber}    ·    Date d'émission : ${issueDate}    ·    Date de vente : ${saleDate}`);
+      .text(`N° ${invoice.number}    ·    Émise le ${fr(invoice.issued_at)}`
+        + (invoice.order_number ? `    ·    Commande ${invoice.order_number}` : ''));
     doc.moveDown(1.4);
 
-    // Seller / Client, side by side.
     const colWidth = (doc.page.width - doc.page.margins.left - doc.page.margins.right - 24) / 2;
     const topY = doc.y;
-    doc.font('Helvetica-Bold').fontSize(9).fillColor('#999999').text('VENDEUR', doc.page.margins.left, topY, { width: colWidth, characterSpacing: 0.5 });
-    doc.font('Helvetica-Bold').fontSize(11).fillColor('#1A1A1A').text(settings.business_legal_name || '[Nom légal de l\'entreprise à renseigner]', { width: colWidth });
+    doc.font('Helvetica-Bold').fontSize(9).fillColor('#999999')
+      .text('VENDEUR', doc.page.margins.left, topY, { width: colWidth, characterSpacing: 0.5 });
+    doc.font('Helvetica-Bold').fontSize(11).fillColor('#1A1A1A').text(seller.legalName || '—', { width: colWidth });
     doc.font('Helvetica').fontSize(9.5).fillColor('#333333');
-    if (settings.business_address) doc.text(settings.business_address, { width: colWidth });
-    else doc.fillColor('#B23B3B').text('[Adresse à renseigner]', { width: colWidth });
-    doc.fillColor('#333333').text(settings.business_siret ? `SIRET : ${settings.business_siret}` : '[SIRET à renseigner]', { width: colWidth });
-    doc.fillColor(settings.business_vat_mention ? '#333333' : '#B23B3B').fontSize(8.5).text(vatMention, { width: colWidth });
+    if (seller.address) doc.text(seller.address, { width: colWidth });
+    if (seller.siret) doc.text(`SIRET : ${seller.siret}`, { width: colWidth });
+    if (seller.email) doc.text(seller.email, { width: colWidth });
 
     const clientX = doc.page.margins.left + colWidth + 24;
-    doc.font('Helvetica-Bold').fontSize(9).fillColor('#999999').text('CLIENT', clientX, topY, { width: colWidth, characterSpacing: 0.5 });
-    doc.font('Helvetica-Bold').fontSize(11).fillColor('#1A1A1A').text(`${client?.first_name || ''} ${client?.last_name || ''}`.trim() || '—', clientX, doc.y, { width: colWidth });
+    doc.font('Helvetica-Bold').fontSize(9).fillColor('#999999')
+      .text('CLIENT', clientX, topY, { width: colWidth, characterSpacing: 0.5 });
+    doc.font('Helvetica-Bold').fontSize(11).fillColor('#1A1A1A').text(client.name || '—', clientX, doc.y, { width: colWidth });
     doc.font('Helvetica').fontSize(9.5).fillColor('#333333');
-    if (client?.city || client?.country) doc.text([client.city, client.country].filter(Boolean).join(', '), clientX, doc.y, { width: colWidth });
-    if (client?.email) doc.text(client.email, clientX, doc.y, { width: colWidth });
+    if (client.address) doc.text(client.address, clientX, doc.y, { width: colWidth });
+    if (client.email) doc.text(client.email, clientX, doc.y, { width: colWidth });
 
-    doc.y = Math.max(doc.y, topY + 90);
+    doc.y = Math.max(doc.y, topY + 96);
     doc.moveDown(1);
-    doc.moveTo(doc.page.margins.left, doc.y).lineTo(doc.page.width - doc.page.margins.right, doc.y).strokeColor('#DDDDDD').stroke();
+    const rule = () => {
+      doc.moveTo(doc.page.margins.left, doc.y).lineTo(doc.page.width - doc.page.margins.right, doc.y)
+        .strokeColor('#DDDDDD').stroke();
+    };
+    rule();
     doc.moveDown(1);
 
-    // Line item — one row, this is a single made-to-measure piece per order.
-    doc.font('Helvetica-Bold').fontSize(9).fillColor('#999999').text('DÉSIGNATION', { characterSpacing: 0.5 });
-    doc.moveDown(0.3);
-    doc.font('Helvetica').fontSize(11).fillColor('#1A1A1A').text(`1 × ${productLabel}`, { continued: false });
-    doc.moveDown(0.8);
-    doc.moveTo(doc.page.margins.left, doc.y).lineTo(doc.page.width - doc.page.margins.right, doc.y).strokeColor('#DDDDDD').stroke();
+    // Lines.
+    const right = doc.page.width - doc.page.margins.right;
+    const amountW = 110;
+    const labelW = right - doc.page.margins.left - amountW;
+    doc.font('Helvetica-Bold').fontSize(9).fillColor('#999999');
+    doc.text('DÉSIGNATION', doc.page.margins.left, doc.y, { continued: true, width: labelW, characterSpacing: 0.5 });
+    doc.text('MONTANT', { align: 'right', width: amountW, characterSpacing: 0.5 });
+    doc.moveDown(0.4);
+    doc.font('Helvetica').fontSize(11).fillColor('#1A1A1A');
+    for (const line of invoice.lines || []) {
+      doc.text(line.label, doc.page.margins.left, doc.y, { continued: true, width: labelW });
+      doc.text(money(line.total_cents), { align: 'right', width: amountW });
+      doc.moveDown(0.2);
+    }
+    doc.moveDown(0.6);
+    rule();
     doc.moveDown(0.8);
 
-    const totalsRight = doc.page.width - doc.page.margins.right;
+    // Totals. Under the franchise en base there is no VAT line by design; the
+    // mention below is what replaces it.
     const row = (label, value, opts = {}) => {
       doc.font(opts.bold ? 'Helvetica-Bold' : 'Helvetica').fontSize(opts.bold ? 12 : 10.5).fillColor('#1A1A1A');
-      doc.text(label, doc.page.margins.left, doc.y, { continued: true, width: 300 });
-      doc.text(value, { align: 'right', width: totalsRight - doc.page.margins.left - 300 });
+      doc.text(label, doc.page.margins.left, doc.y, { continued: true, width: labelW });
+      doc.text(value, { align: 'right', width: amountW });
     };
-    row('Total', money(totalCents), { bold: true });
-    row('Acompte déjà réglé', money(order.deposit_amount_cents));
-    row('Solde à régler', money(order.balance_amount_cents), { bold: true });
-    doc.moveDown(1.4);
+    if (isDeposit) {
+      row('Total acompte', money(invoice.total_cents), { bold: true });
+    } else {
+      row('Total', money(invoice.total_cents), { bold: true });
+      // Plain hyphen-minus, not the typographic U+2212: PDFKit's built-in
+      // Helvetica has no glyph for the latter and prints a stray quote.
+      if (invoice.already_paid_cents) row('Acompte déjà réglé', `- ${money(invoice.already_paid_cents)}`);
+      row('Solde', money(invoice.due_cents), { bold: true });
+    }
+    doc.moveDown(0.6);
+    doc.font('Helvetica').fontSize(9).fillColor('#333333').text(invoice.vat_mention || '');
+    doc.moveDown(1.2);
 
-    doc.font('Helvetica').fontSize(8.5).fillColor('#999999').text(
-      "Conditions de paiement : solde à régler à réception de la facture. En cas de retard de paiement, une pénalité "
-      + "sera appliquée conformément à l'article L441-10 du Code de commerce, ainsi qu'une indemnité forfaitaire de "
-      + "40 € pour frais de recouvrement.",
-      { width: totalsRight - doc.page.margins.left },
+    doc.font('Helvetica').fontSize(8.5).fillColor('#999999');
+    if (invoice.paid_at) {
+      doc.text(`Réglée le ${fr(invoice.paid_at)}`
+        + (invoice.payment_ref ? ` — référence de paiement ${invoice.payment_ref}` : '') + '.',
+        { width: right - doc.page.margins.left });
+      doc.moveDown(0.4);
+    }
+    doc.text(
+      "En cas de retard de paiement, une pénalité sera appliquée conformément à l'article L441-10 du Code de "
+      + "commerce, ainsi qu'une indemnité forfaitaire de 40 € pour frais de recouvrement. Pas d'escompte pour "
+      + 'paiement anticipé.',
+      { width: right - doc.page.margins.left },
     );
 
     doc.end();

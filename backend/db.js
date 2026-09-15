@@ -221,6 +221,56 @@ export function migrate() {
       updated_at TEXT DEFAULT (datetime('now'))
     );
 
+    -- Invoices are snapshots, never views. An invoice must read the same in
+    -- five years as on the day it was issued, whatever happened to the order,
+    -- the client record or the seller's address since — so every field an
+    -- accountant or an inspector will look at is copied here at issue time,
+    -- and the PDF is written to disk once and never rebuilt.
+    --
+    -- Two per order, because French law asks for it: a facture d'acompte when
+    -- the deposit is collected, a facture de solde when the rest is. Numbering
+    -- is its own chronological, gap-free sequence per year — reusing order
+    -- numbers (which have gaps) would fail the first audit.
+    CREATE TABLE IF NOT EXISTS invoices (
+      id TEXT PRIMARY KEY,
+      number TEXT NOT NULL UNIQUE,        -- SLY-2026-F-0001
+      seq_year INTEGER NOT NULL,
+      seq_n INTEGER NOT NULL,
+      kind TEXT NOT NULL,                 -- deposit | balance
+      order_id TEXT NOT NULL,
+      client_id TEXT,
+
+      issued_at TEXT NOT NULL,            -- the legal issue date, fixed forever
+      sale_date TEXT,                     -- date of the underlying sale
+
+      seller_json TEXT NOT NULL,          -- legal name, address, SIRET, VAT mention
+      client_json TEXT NOT NULL,          -- name, address, email as of issue
+      lines_json TEXT NOT NULL,           -- [{label, qty, unit_cents, total_cents}]
+
+      subtotal_cents INTEGER NOT NULL,
+      vat_cents INTEGER NOT NULL DEFAULT 0,
+      total_cents INTEGER NOT NULL,
+      already_paid_cents INTEGER NOT NULL DEFAULT 0,
+      due_cents INTEGER NOT NULL,
+      vat_mention TEXT NOT NULL,
+
+      payment_ref TEXT,                   -- Stripe id, so the accountant can reconcile
+      paid_at TEXT,
+      pdf_path TEXT NOT NULL,
+
+      created_at TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE RESTRICT,
+      UNIQUE (order_id, kind)
+    );
+
+    -- The gap-free counter. A row per year; incremented inside the same
+    -- transaction that inserts the invoice, so two payments landing in the
+    -- same second cannot both take number 0007.
+    CREATE TABLE IF NOT EXISTS invoice_counters (
+      year INTEGER PRIMARY KEY,
+      last_n INTEGER NOT NULL DEFAULT 0
+    );
+
     -- SLY's own standard size chart: the bridge between a bespoke order's body
     -- measurements and a retail size everyone understands ("48", "M", "50R").
     -- Empty until Luc fills it in, and everything that reads it degrades to
@@ -236,6 +286,25 @@ export function migrate() {
       label TEXT NOT NULL,
       sort_order INTEGER NOT NULL DEFAULT 0,
       ranges_json TEXT NOT NULL DEFAULT '{}',
+      notes TEXT,
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now'))
+    );
+
+    -- The atelier's own growing fabric library (2026-09-16) — replaces the
+    -- static placeholder book catalogue (sly-suit-meeting's fabricData.ts,
+    -- with its recommendation engine) as the source of truth for what a
+    -- stylist can pick during a meeting. A real fabric only ever gets a row
+    -- here the first time someone actually uses it; there is no book/tier
+    -- structure, no seeded data, and no matching logic — just name,
+    -- reference and price, searched by name/reference at pick time.
+    CREATE TABLE IF NOT EXISTS fabrics (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      reference TEXT,
+      color TEXT,
+      composition TEXT,
+      price_cents INTEGER,
       notes TEXT,
       created_at TEXT DEFAULT (datetime('now')),
       updated_at TEXT DEFAULT (datetime('now'))
@@ -682,6 +751,15 @@ export function migrate() {
   // margin. 140 € is what SLY bears per remake (Luc, 2026-08-20).
   // The yuan/euro rate the catalogue converts at. One place, so no two
   // margins on the site can ever be computed at different rates.
+  // Seller identity for invoices. Given by Luc on 2026-09-16; SIRET checked
+  // against the Luhn key before being written. The VAT mention is the exact
+  // legal wording for a micro-entrepreneur under the franchise en base —
+  // prices are then TTC = HT with no VAT line, and the invoice must say so.
+  seed.run('business_legal_name', 'Luc Gerbet EI');
+  seed.run('business_address', "232 chemin du Mas d'Iglon\n30230 Bouillargues\nFrance");
+  seed.run('business_siret', '10312142200010');
+  seed.run('business_vat_mention', 'TVA non applicable, art. 293 B du CGI');
+
   seed.run('cny_per_eur', '7.8');
 
   seed.run('redo_cost_cents', '14000');

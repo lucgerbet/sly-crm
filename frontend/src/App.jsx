@@ -9,6 +9,7 @@ import Automation from './components/Automation.jsx';
 import Analytics from './components/Analytics.jsx';
 import SizeChart from './components/SizeChart.jsx';
 import Products from './components/Products.jsx';
+import Invoices from './components/Invoices.jsx';
 import Content from './components/Content.jsx';
 
 const TABS = [
@@ -18,6 +19,7 @@ const TABS = [
   { id: 'prospects', label: 'Prospects' },
   { id: 'orders',    label: 'Orders'    },
   { id: 'reports',   label: 'Reports'   },
+  { id: 'invoices',  label: 'Factures'  },
   { id: 'analytics', label: 'Analytics' },
   { id: 'products',  label: 'Produits'  },
   { id: 'sizes',     label: 'Size chart' },
@@ -142,6 +144,7 @@ export default function App() {
       <main className="max-w-7xl mx-auto px-6 py-6">
         {view === 'dashboard' && <Dashboard key={`dash-${refreshKey}`} goTo={goTo} />}
         {view === 'products' && <Products key={`products-${refreshKey}`} notify={notify} />}
+        {view === 'invoices' && <Invoices key={`invoices-${refreshKey}`} notify={notify} />}
         {view === 'sizes' && <SizeChart key={`sizes-${refreshKey}`} notify={notify} />}
         {view === 'daily' && (
           <Daily key={`daily-${refreshKey}`} notify={notify} onSelect={id => openPanel(id)} onChanged={refresh} />

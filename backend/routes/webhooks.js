@@ -9,6 +9,7 @@ import { getSettings } from './settings.js';
 import { formatMoney, logMessage, productLabel } from '../lib/orderHelpers.js';
 import { extractFathomFields, matchFathomCall, storeFathomCall, verifyFathomSignature } from '../lib/fathom.js';
 import { redeemUrl } from './giftCards.js';
+import { issueInvoice } from '../lib/invoices.js';
 
 const router = Router();
 
@@ -75,6 +76,16 @@ router.post('/stripe', async (req, res) => {
           WHERE id = ?
         `).run(session.payment_intent || null, order.id);
         logMessage(order.client_id, 'deposit_paid', `Deposit paid (${session.amount_total ? (session.amount_total / 100) : '?'} ${session.currency || ''})`);
+
+        // The facture d'acompte, issued the moment the money lands. Wrapped
+        // so a legal-readiness refusal (seller identity not filled in) is
+        // logged loudly but never turns a successful payment into a 500 that
+        // makes Stripe retry it.
+        try {
+          await issueInvoice({ orderId: order.id, kind: 'deposit', paymentRef: session.payment_intent || session.id });
+        } catch (e) {
+          console.error(`[stripe-webhook] deposit invoice NOT issued for ${order.order_number || order.id}: ${e.message}`);
+        }
 
         // The workshop ships straight to the client — collected as part of
         // the Stripe Checkout page itself (shipping_address_collection, see
@@ -195,6 +206,14 @@ router.post('/stripe', async (req, res) => {
             updated_at = datetime('now')
           WHERE id = ?
         `).run(session.id, order.id);
+
+        // The facture de solde — total, deposit deducted. Same wrapping and
+        // same reason as the deposit invoice above.
+        try {
+          await issueInvoice({ orderId: order.id, kind: 'balance', paymentRef: session.payment_intent || session.id });
+        } catch (e) {
+          console.error(`[stripe-webhook] balance invoice NOT issued for ${order.order_number || order.id}: ${e.message}`);
+        }
 
         const client = db.prepare('SELECT * FROM clients WHERE id = ?').get(order.client_id);
         const settings = getSettings();

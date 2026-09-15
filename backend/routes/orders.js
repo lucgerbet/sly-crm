@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import db from '../db.js';
 import { sendEmail, renderTemplate, wrapHtml } from '../lib/email.js';
 import { createBalancePaymentLink, deactivatePaymentLink, isStripeConfigured } from '../lib/stripe.js';
-import { buildProductionOrderPdf, buildInvoicePdf } from '../lib/pdf.js';
+import { buildProductionOrderPdf } from '../lib/pdf.js';
 import { buildTailoringOrderXlsx } from '../lib/xlsx.js';
 import { buildBalanceEmail, BALANCE_EMAIL_STAGES } from '../lib/balanceEmails.js';
 import { getSettings } from './settings.js';
@@ -352,7 +352,7 @@ router.post('/finalize', requireIntakeSecret, async (req, res) => {
 // email here — and bilingual, because the two buttons are the whole point of
 // the message: they are what turns "the workshop has it somewhere" into two
 // real timestamps.
-function workshopEmailHtml({ body, trackUrl, reference }) {
+function workshopEmailHtml({ body, trackUrl, trackUrlPdf, reference }) {
   // English and Chinese only — the workshop is in China and reads neither
   // French nor the CRM.
   const P = { offwhite: '#f8f4ef', ink: '#1a1410', cherry: '#5a1f24', border: '#e5ddd5', muted: '#6b5b4e' };
@@ -371,12 +371,18 @@ function workshopEmailHtml({ body, trackUrl, reference }) {
           <div style="font-family:Georgia,serif;font-size:22px;letter-spacing:.28em;color:${P.ink};">SLY</div>
           <div style="font-family:${SANS};font-size:9px;letter-spacing:.32em;text-transform:uppercase;color:${P.muted};margin:4px 0 22px;">Atelier</div>
           ${paras}
-          <table role="presentation" cellpadding="0" cellspacing="0" style="margin-top:8px;">
+          <table role="presentation" cellpadding="0" cellspacing="0" style="margin-top:8px;width:100%;">
             <tr><td style="border-radius:2px;background:${P.cherry};">
               <a href="${trackUrl}" style="display:block;padding:16px 30px;font-family:${SANS};font-size:15px;color:#ffffff;text-decoration:none;">
-                Open the production order (PDF)<br>点击打开生产订单（PDF）
+                Open the production order (Excel)<br>点击打开生产订单（Excel）
               </a>
             </td></tr>
+            ${trackUrlPdf ? `
+            <tr><td style="border-radius:2px;border:1px solid ${P.border};margin-top:10px;">
+              <a href="${trackUrlPdf}" style="display:block;padding:13px 30px;font-family:${SANS};font-size:13px;color:${P.muted};text-decoration:none;">
+                Open as PDF instead · 也可打开 PDF 版本
+              </a>
+            </td></tr>` : ''}
           </table>
           <p style="margin:18px 0 0;font-family:${SANS};font-size:12px;line-height:1.6;color:${P.muted};">
             If the button does not work, copy this address into your browser:<br>
@@ -411,12 +417,22 @@ async function sendDocketToWorkshop(orderId, mode = 'initial') {
     return { status: 400, body: { error: 'workshop_notify_email is not configured yet' } };
   }
 
+  const orderConfig = JSON.parse(order.config_json || '{}');
   const pdfBuffer = await buildProductionOrderPdf({
-    order,
-    client,
-    config: JSON.parse(order.config_json || '{}'),
+    order, client, config: orderConfig,
     shopConfigSummary: JSON.parse(order.shop_config_summary || '[]'),
   });
+  // Luc's own standardized order form (2026-09-16) — now the PRIMARY
+  // document the workshop is pointed at, with the PDF kept as a secondary
+  // link (see workshopEmailHtml/routes/workshop.js). Wrapped separately so a
+  // template bug in the newer xlsx builder never blocks the PDF/email the
+  // stylist is waiting on.
+  let xlsxBuffer = null;
+  try {
+    xlsxBuffer = await buildTailoringOrderXlsx({ order, client, config: orderConfig });
+  } catch (xe) {
+    console.error('[orders/sendDocketToWorkshop] tailoring order xlsx failed (non-fatal):', xe.message);
+  }
   const vars = {
     first_name: client.first_name || '',
     last_name: client.last_name || '',
@@ -437,18 +453,21 @@ async function sendDocketToWorkshop(orderId, mode = 'initial') {
     workshopToken = randomUUID().replace(/-/g, '');
     db.prepare('UPDATE orders SET workshop_token = ? WHERE id = ?').run(workshopToken, order.id);
   }
-  // Straight at the PDF, not at a landing page: one tap on a phone in China
-  // is one tap too few to lose. The landing page still exists for anyone who
-  // trims the URL.
-  const trackUrl = process.env.PUBLIC_URL
-    ? `${process.env.PUBLIC_URL.replace(/\/$/, '')}/workshop/${workshopToken}/bon-de-commande.pdf`
-    : null;
+  // Straight at the document, not at a landing page: one tap on a phone in
+  // China is one tap too few to lose. The landing page still exists for
+  // anyone who trims the URL. Excel is now primary (see above); the PDF
+  // stays as a secondary link in the same email.
+  const publicBase = process.env.PUBLIC_URL ? process.env.PUBLIC_URL.replace(/\/$/, '') : null;
+  const trackUrl = publicBase ? `${publicBase}/workshop/${workshopToken}/bon-de-commande.xlsx` : null;
+  const trackUrlPdf = publicBase ? `${publicBase}/workshop/${workshopToken}/bon-de-commande.pdf` : null;
 
   const sent = await sendEmail({
     to: settings.workshop_notify_email,
     subject,
-    text: trackUrl ? `${body}\n\n---\nProduction order / 生产订单 (PDF):\n${trackUrl}` : body,
-    html: trackUrl ? workshopEmailHtml({ body, trackUrl, reference: vars.order_reference }) : undefined,
+    text: trackUrl
+      ? `${body}\n\n---\nProduction order / 生产订单 (Excel):\n${trackUrl}\n\nPDF version:\n${trackUrlPdf}`
+      : body,
+    html: trackUrl ? workshopEmailHtml({ body, trackUrl, trackUrlPdf, reference: vars.order_reference }) : undefined,
     // A copy to Luc: this is the one email in the whole system that leaves
     // for a third party, and it should never go out with no trace anywhere he
     // can reach.
@@ -456,11 +475,14 @@ async function sendDocketToWorkshop(orderId, mode = 'initial') {
     // The docket is deliberately NOT attached when a tracking link exists:
     // an attachment gets opened without ever telling us, and the whole point
     // of the link is to measure how long the workshop takes to pick the order
-    // up. Falls back to the attachment when PUBLIC_URL is unset, so a
-    // misconfiguration can never leave the workshop with no docket at all.
+    // up. Falls back to attaching BOTH documents when PUBLIC_URL is unset, so
+    // a misconfiguration can never leave the workshop with no docket at all.
     ...(trackUrl
       ? {}
-      : { attachments: [{ filename: `bon-de-commande-${order.order_number || order.id}.pdf`, content: pdfBuffer }] }),
+      : { attachments: [
+          { filename: `bon-de-commande-${order.order_number || order.id}.pdf`, content: pdfBuffer },
+          ...(xlsxBuffer ? [{ filename: `bon-de-commande-${order.order_number || order.id}.xlsx`, content: xlsxBuffer }] : []),
+        ] }),
   });
   if (!sent.ok) return { status: 500, body: { error: 'Email send failed' } };
 
@@ -1583,24 +1605,23 @@ router.get('/:id/email-preview', (req, res) => {
   }
 });
 
-// GET /api/orders/:id/invoice.pdf — deliberately NOT behind requireIntakeSecret,
-// unlike the rest of this router: it's meant to be opened directly in Luc's
-// browser (protected by Traefik Basic Auth at the edge, same as the rest of
-// the CRM), not called server-to-server. Invoice number = order_number (same
-// sequence, Luc's choice — see nextOrderNumber()).
-router.get('/:id/invoice.pdf', async (req, res) => {
-  try {
-    const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id);
-    if (!order) return res.status(404).json({ error: 'Order not found' });
-    const client = db.prepare('SELECT * FROM clients WHERE id = ?').get(order.client_id);
-    const settings = getSettings();
-    const pdfBuffer = await buildInvoicePdf({ order, client, settings });
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `inline; filename="facture-${order.order_number || order.id}.pdf"`);
-    res.send(pdfBuffer);
-  } catch (e) {
-    res.status(500).json({ error: e.message });
+// GET /api/orders/:id/invoice.pdf — the order's invoice, as issued. Serves
+// the balance invoice when it exists, else the deposit one, else explains
+// that nothing has been issued: an invoice is now a stored legal document
+// (see lib/invoices.js), never something rebuilt from the live order on
+// request — which is what this route used to do, with a fresh issue date
+// every time it was opened.
+router.get('/:id/invoice.pdf', (req, res) => {
+  const row = db.prepare(`
+    SELECT * FROM invoices WHERE order_id = ?
+    ORDER BY CASE kind WHEN 'balance' THEN 0 ELSE 1 END LIMIT 1
+  `).get(req.params.id);
+  if (!row) {
+    return res.status(409).json({
+      error: "Aucune facture émise pour cette commande — elle est émise automatiquement à l'encaissement.",
+    });
   }
+  res.redirect(302, `/api/invoices/${row.id}/pdf`);
 });
 
 // GET /api/orders/:id/production-order.pdf — same auth pattern as invoice.pdf

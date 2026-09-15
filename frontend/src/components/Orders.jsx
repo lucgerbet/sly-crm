@@ -560,7 +560,7 @@ export default function Orders({ notify, onSelectClient }) {
                       target="_blank" rel="noreferrer"
                       className="text-[11px] border border-line px-2.5 py-1 rounded-md hover:bg-surface text-ink-secondary hover:text-ink-primary"
                     >
-                      Invoice (PDF) ↗
+                      Facture ↗
                     </a>
                     {o.sent_to_workshop_at && (
                       <span className="text-[11px] text-ink-secondary">

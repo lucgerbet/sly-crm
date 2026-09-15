@@ -57,6 +57,9 @@ export const api = {
   sendDocket: (id) => request(`/orders/${id}/send-docket`, { method: 'POST' }),
   remindWorkshop: (id) => request(`/orders/${id}/remind-workshop`, { method: 'POST' }),
   regions: () => request('/regions'),
+  invoices: (params = {}) => request(`/invoices?${new URLSearchParams(
+    Object.fromEntries(Object.entries(params).filter(([, v]) => v != null && v !== '')),
+  )}`),
   products: () => request('/products'),
   createProduct: (body) => request('/products', { method: 'POST', body: JSON.stringify(body) }),
   updateProduct: (id, body) => request(`/products/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
