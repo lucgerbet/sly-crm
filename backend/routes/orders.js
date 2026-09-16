@@ -1257,7 +1257,7 @@ router.get('/production-board', (req, res) => {
     costDefaults: Object.fromEntries(
       catalogue()
         .filter((p) => p.cost_cny != null)
-        .map((p) => [p.key, p.costWithBonusCents]),
+        .map((p) => [p.key, p.fullCostCents]),
     ),
     // Distinct seamstresses already used, so the UI can offer them instead of
     // making Luc retype the same address for every client in the same city.

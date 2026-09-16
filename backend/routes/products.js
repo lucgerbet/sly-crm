@@ -77,7 +77,12 @@ export function withMargin(row, rate = cnyRate(), urssafPct = urssafRate(), stri
   const costWithBonusCents = Math.round(((cost + surchargeCny + bonus) / rate) * 100) + exportFeeCents;
   const payments = Math.max(1, Math.round(Number(row.payments)) || 2);
   const { urssafCents, liberatoireCents, stripeCents } = chargesOn(price, payments, urssafPct, liberatoirePct, stripe);
-  const charges = urssafCents + liberatoireCents + stripeCents;
+  // Packaging and acquisition sit outside the landed cost — they are what it
+  // costs to sell and ship a piece, not to make it — but every euro of them
+  // leaves the margin all the same.
+  const packagingCents = Math.max(0, Math.round(Number(row.packaging_cents)) || 0);
+  const cacCents = Math.max(0, Math.round(Number(row.cac_cents)) || 0);
+  const charges = urssafCents + liberatoireCents + stripeCents + packagingCents + cacCents;
   const marginCents = price - costCents - charges;
   const marginWithBonusCents = price - costWithBonusCents - charges;
   return {
@@ -89,6 +94,11 @@ export function withMargin(row, rate = cnyRate(), urssafPct = urssafRate(), stri
     exportFeeCents,
     costCents,
     costWithBonusCents,
+    packagingCents,
+    cacCents,
+    // What one sale of this piece costs SLY all in, Stripe and taxes aside —
+    // the figure an order carries as its cost.
+    fullCostCents: costWithBonusCents + packagingCents + cacCents,
     payments,
     urssafCents,
     liberatoireCents,
@@ -111,12 +121,13 @@ export function catalogue() {
 }
 
 // Looks a product up by the key an order carries in product_type. Returns the
-// cost Luc actually bears, bonus included.
+// cost Luc actually bears on one sale: landed cost, bonus, packaging and
+// acquisition included.
 export function productCostCents(productType) {
   if (!productType) return null;
   const row = db.prepare('SELECT * FROM products WHERE key = ? AND active = 1').get(productType);
   if (!row || row.cost_cny == null) return null;
-  return withMargin(row).costWithBonusCents;
+  return withMargin(row).fullCostCents;
 }
 
 router.get('/', (_req, res) => {
@@ -147,6 +158,8 @@ function clean(body, existing = {}) {
     ['surcharge_pct', (v) => Number(v)],
     ['export_fee_cents', (v) => Math.round(Number(v))],
     ['payments', (v) => Math.max(1, Math.round(Number(v)))],
+    ['packaging_cents', (v) => Math.round(Number(v))],
+    ['cac_cents', (v) => Math.round(Number(v))],
     ['sort_order', (v) => Math.round(Number(v))],
   ]) {
     if (body[field] === undefined) continue;

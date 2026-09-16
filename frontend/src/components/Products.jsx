@@ -96,7 +96,9 @@ export default function Products({ notify }) {
               base + frais + bonus + export. L'<strong className="text-ink-primary">URSSAF</strong> ({urssafPct}&nbsp;% du prix
               de vente), le <strong className="text-ink-primary">versement libératoire</strong> ({liberatoirePct}&nbsp;%) et <strong className="text-ink-primary">Stripe</strong> ({stripe.pct}&nbsp;% + {(stripe.fixedCents / 100).toFixed(2)}&nbsp;€
               par transaction — deux transactions pour une pièce vendue avec acompte, une pour une chemise) sont retenus
-              en plus, sur le prix. Les deux se règlent dans Automation ; les deux marges sont après URSSAF, impôt et Stripe.
+              en plus, sur le prix. Les deux se règlent dans Automation. <strong className="text-ink-primary">Packaging</strong> et{' '}
+              <strong className="text-ink-primary">CAC</strong> (coût d'acquisition par vente) sont à 0 tant qu'ils ne sont pas
+              mesurés — 0 veut dire « pas encore chiffré », pas « gratuit ». Les deux marges sont après tout cela.
             </p>
             <p className="text-[13px] text-ink-secondary mt-2">
               Ces coûts alimentent directement la marge du dashboard et celle de chaque commande.
@@ -131,6 +133,8 @@ export default function Products({ notify }) {
               <th className="text-right font-medium px-2 py-3">Vers. lib. €</th>
               <th className="text-right font-medium px-2 py-3">Paiem.</th>
               <th className="text-right font-medium px-2 py-3">Stripe €</th>
+              <th className="text-right font-medium px-2 py-3">Packaging €</th>
+              <th className="text-right font-medium px-2 py-3">CAC €</th>
               <th className="text-right font-medium px-2 py-3">Marge sèche</th>
               <th className="text-right font-medium px-2 py-3">Marge si satisfait</th>
               <th className="text-center font-medium px-2 py-3">Sur le site</th>
@@ -174,6 +178,8 @@ export default function Products({ notify }) {
                 <td className="px-2 py-2 text-right tabular-nums text-ink-secondary whitespace-nowrap">
                   {eur(r.stripeCents)}
                 </td>
+                <Num row={r} field="packaging_cents" value={r.packaging_cents == null ? '' : r.packaging_cents / 100} onSave={save} scale={100} width="w-20" />
+                <Num row={r} field="cac_cents" value={r.cac_cents == null ? '' : r.cac_cents / 100} onSave={save} scale={100} width="w-20" />
                 <td className="px-2 py-2 text-right tabular-nums whitespace-nowrap">
                   {eur(r.marginCents)}
                   <span className="text-ink-secondary text-[11px] ml-1">{r.marginPct}%</span>

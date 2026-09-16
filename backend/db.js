@@ -732,6 +732,12 @@ export function migrate() {
   // paid in full. Stripe's percentage is the same either way; only the fixed
   // 0.25 EUR is charged per transaction.
   addColumn('products', 'payments', 'INTEGER');
+  // Two costs per piece that are zero today and will not stay so: the box
+  // it ships in, and what it cost to win the customer (ads, cards, events —
+  // averaged per sale). In euros, editable per product, deducted from the
+  // margin; zero means "not yet measured", not "free".
+  addColumn('products', 'packaging_cents', 'INTEGER DEFAULT 0');
+  addColumn('products', 'cac_cents', 'INTEGER DEFAULT 0');
   // The 3 % surcharge itself is applied below, after the catalogue seed.
 
   // Links a redeemed gift's resulting order back to the gift_cards row that
