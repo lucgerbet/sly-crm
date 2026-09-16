@@ -727,6 +727,11 @@ export function migrate() {
   // by default and no surcharge until one is typed in.
   addColumn('products', 'export_fee_cents', 'INTEGER DEFAULT 5000');
   addColumn('products', 'surcharge_pct', 'REAL');
+  // How many Stripe transactions a sale of this product takes: two for the
+  // pieces sold on a deposit (150 EUR, then the balance), one for a shirt
+  // paid in full. Stripe's percentage is the same either way; only the fixed
+  // 0.25 EUR is charged per transaction.
+  addColumn('products', 'payments', 'INTEGER');
   // The 3 % surcharge itself is applied below, after the catalogue seed.
 
   // Links a redeemed gift's resulting order back to the gift_cards row that
@@ -825,6 +830,8 @@ export function migrate() {
       AND key IN ('suit', 'blazer', 'pack_suit_shirt', 'pack_suit_3shirts', 'pack_suit_5shirts')
   `).run();
   db.prepare('UPDATE products SET surcharge_pct = 0 WHERE surcharge_pct IS NULL').run();
+  db.prepare("UPDATE products SET payments = 1 WHERE payments IS NULL AND key LIKE 'shirt%'").run();
+  db.prepare('UPDATE products SET payments = 2 WHERE payments IS NULL').run();
 
   // Birthday email automation — disabled by default until RESEND_API_KEY is set
   // and the user has reviewed the template wording (see routes/automation.js).

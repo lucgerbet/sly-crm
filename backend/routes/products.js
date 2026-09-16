@@ -27,6 +27,26 @@ export function urssafRate() {
   return Number.isFinite(raw) && raw >= 0 ? raw : 0;
 }
 
+// The same Stripe pricing the dashboard applies to real payments — read from
+// settings, so the catalogue's estimate and the dashboard's never diverge.
+export function stripeFees() {
+  const s = getSettings();
+  const pct = Number.parseFloat(s.stripe_fee_percent);
+  const fixed = Number.parseInt(s.stripe_fee_fixed_cents, 10);
+  return {
+    pct: Number.isFinite(pct) && pct >= 0 ? pct : 0,
+    fixedCents: Number.isFinite(fixed) && fixed >= 0 ? fixed : 0,
+  };
+}
+
+// Charges = costs of selling, as opposed to costs of making: everything that
+// comes off the price rather than going into the piece.
+function chargesOn(priceCents, payments, urssafPct, stripe) {
+  const urssafCents = Math.round(priceCents * (urssafPct / 100));
+  const stripeCents = Math.round(priceCents * (stripe.pct / 100)) + stripe.fixedCents * payments;
+  return { urssafCents, stripeCents };
+}
+
 // Everything derived hangs off this, so the arithmetic exists exactly once.
 //
 // A landed cost has four parts: the workshop's base price, a percentage
@@ -34,9 +54,11 @@ export function urssafRate() {
 // shirts none), the quality bonus, and a flat export fee paid in euros. The
 // first three are in yuan and converted together; the fee is added after.
 //
-// URSSAF is a different animal: a share of the selling price, not of the
-// cost, so it is taken off the margin rather than added to the landed cost.
-export function withMargin(row, rate = cnyRate(), urssafPct = urssafRate()) {
+// URSSAF and Stripe are a different animal: shares of the selling price, not
+// of the cost, so they are taken off the margin rather than added to the
+// landed cost. Stripe's fixed part is charged once per transaction, and a
+// deposit-then-balance sale is two of them.
+export function withMargin(row, rate = cnyRate(), urssafPct = urssafRate(), stripe = stripeFees()) {
   const cost = Number(row.cost_cny) || 0;
   const bonus = Number(row.bonus_cny) || 0;
   const price = Number(row.price_cents) || 0;
@@ -46,9 +68,10 @@ export function withMargin(row, rate = cnyRate(), urssafPct = urssafRate()) {
   const surchargeCents = Math.round((surchargeCny / rate) * 100);
   const costCents = Math.round(((cost + surchargeCny) / rate) * 100) + exportFeeCents;
   const costWithBonusCents = Math.round(((cost + surchargeCny + bonus) / rate) * 100) + exportFeeCents;
-  const urssafCents = Math.round(price * (urssafPct / 100));
-  const marginCents = price - costCents - urssafCents;
-  const marginWithBonusCents = price - costWithBonusCents - urssafCents;
+  const payments = Math.max(1, Math.round(Number(row.payments)) || 2);
+  const { urssafCents, stripeCents } = chargesOn(price, payments, urssafPct, stripe);
+  const marginCents = price - costCents - urssafCents - stripeCents;
+  const marginWithBonusCents = price - costWithBonusCents - urssafCents - stripeCents;
   return {
     ...row,
     is_pack: !!row.is_pack,
@@ -58,10 +81,12 @@ export function withMargin(row, rate = cnyRate(), urssafPct = urssafRate()) {
     exportFeeCents,
     costCents,
     costWithBonusCents,
+    payments,
     urssafCents,
+    stripeCents,
     // "Sèche" = before the quality bonus. Both are shown because the gap
     // between them is exactly what the bonus costs, and that is a decision
-    // Luc revisits. Both are after URSSAF.
+    // Luc revisits. Both are after URSSAF and Stripe.
     marginCents,
     marginWithBonusCents,
     marginPct: price ? Math.round((marginCents / price) * 1000) / 10 : null,
@@ -70,10 +95,10 @@ export function withMargin(row, rate = cnyRate(), urssafPct = urssafRate()) {
 }
 
 export function catalogue() {
-  const rate = cnyRate(), urssaf = urssafRate();
+  const rate = cnyRate(), urssaf = urssafRate(), stripe = stripeFees();
   return db.prepare('SELECT * FROM products WHERE active = 1 ORDER BY sort_order ASC, label ASC')
     .all()
-    .map((r) => withMargin(r, rate, urssaf));
+    .map((r) => withMargin(r, rate, urssaf, stripe));
 }
 
 // Looks a product up by the key an order carries in product_type. Returns the
@@ -86,7 +111,7 @@ export function productCostCents(productType) {
 }
 
 router.get('/', (_req, res) => {
-  res.json({ data: catalogue(), rate: cnyRate(), urssafPct: urssafRate() });
+  res.json({ data: catalogue(), rate: cnyRate(), urssafPct: urssafRate(), stripe: stripeFees() });
 });
 
 // GET /api/products/on-site — what sly-shop is allowed to offer. Narrow and
@@ -112,6 +137,7 @@ function clean(body, existing = {}) {
     ['bonus_cny', (v) => Number(v)],
     ['surcharge_pct', (v) => Number(v)],
     ['export_fee_cents', (v) => Math.round(Number(v))],
+    ['payments', (v) => Math.max(1, Math.round(Number(v)))],
     ['sort_order', (v) => Math.round(Number(v))],
   ]) {
     if (body[field] === undefined) continue;
