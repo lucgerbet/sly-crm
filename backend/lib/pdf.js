@@ -586,19 +586,15 @@ export function buildInvoicePdf({ invoice, settings }) {
     doc.font('Helvetica').fontSize(9).fillColor('#333333').text(invoice.vat_mention || '');
     doc.moveDown(1.2);
 
+    // No late-payment clause: it is a business-to-business obligation
+    // (art. L441-9) and SLY sells to private individuals, on invoices that
+    // are issued already paid. Only the payment line remains.
     doc.font('Helvetica').fontSize(8.5).fillColor('#999999');
     if (invoice.paid_at) {
       doc.text(`Réglée le ${fr(invoice.paid_at)}`
         + (invoice.payment_ref ? ` — référence de paiement ${invoice.payment_ref}` : '') + '.',
         { width: right - doc.page.margins.left });
-      doc.moveDown(0.4);
     }
-    doc.text(
-      "En cas de retard de paiement, une pénalité sera appliquée conformément à l'article L441-10 du Code de "
-      + "commerce, ainsi qu'une indemnité forfaitaire de 40 € pour frais de recouvrement. Pas d'escompte pour "
-      + 'paiement anticipé.',
-      { width: right - doc.page.margins.left },
-    );
 
     doc.end();
   });
