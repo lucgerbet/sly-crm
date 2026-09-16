@@ -787,6 +787,11 @@ export function migrate() {
   // overstated, and adjustable here when the real rate differs.
   seed.run('stripe_fee_percent', '1.5');
   seed.run('stripe_fee_fixed_cents', '25');
+  // URSSAF contributions of a micro-entrepreneur selling goods: a flat share
+  // of every euro sold, owed whether or not the sale made money. Deducted
+  // from the net margin, never from the gross — it is a tax on revenue, not
+  // a cost of making the piece.
+  seed.run('urssaf_percent', '12.3');
 
   // Catalogue rows. Prices and costs given by Luc on 2026-08-23; packs are
   // priced as a bundle, and their cost is the sum of what goes in them.

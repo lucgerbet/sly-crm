@@ -263,6 +263,11 @@ function MoneyPanels({ cur, range }) {
         <div className="text-[11px] text-ink-secondary mt-0.5 whitespace-nowrap">
           after {eur(real.feesCents)} Stripe fees
         </div>
+        {real.urssafCents > 0 && (
+          <div className="text-[11px] text-ink-secondary mt-0.5 whitespace-nowrap">
+            and {eur(real.urssafCents)} URSSAF
+          </div>
+        )}
         {gaps > 0 && (
           <div className="text-[11px] mt-1 whitespace-nowrap" style={{ color: '#EF9F27' }}>
             {gaps} order{gaps > 1 ? 's' : ''} with no cost set

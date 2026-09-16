@@ -691,6 +691,10 @@ router.get('/revenue', (req, res) => {
   const feePct = Number.parseFloat(settings.stripe_fee_percent) || 0;
   const feeFixed = Number.parseInt(settings.stripe_fee_fixed_cents, 10) || 0;
   const feeOn = (cents, payments) => Math.round(cents * (feePct / 100)) + feeFixed * payments;
+  // URSSAF is owed on every euro sold, so it sits with the fees: taken off
+  // the net margin, not off the gross.
+  const urssafPct = Number.parseFloat(settings.urssaf_percent) || 0;
+  const urssafOn = (cents) => Math.round(cents * (urssafPct / 100));
 
   // Per-order cost wins when set; otherwise the catalogue's cost for that
   // piece, bonus included. Unknown stays null — never zero.
@@ -726,15 +730,16 @@ router.get('/revenue', (req, res) => {
       [{ revision: o.revision, alterations: incidents.get(o.id) || [] }], settings,
     ).cents;
     perOrderGrossSum += total - cost - own;
-    perOrderNetSum += total - cost - own - feeOn(total, 2);
+    perOrderNetSum += total - cost - own - feeOn(total, 2) - urssafOn(total);
   }
 
   // Stripe takes its cut per payment, so the fixed part is counted once for
   // each deposit and each balance actually collected in the period.
   const collectedCents = deposits.cents + balances.cents;
   const collectedFeesCents = feeOn(deposits.cents, deposits.n) + feeOn(balances.cents, balances.n);
+  const collectedUrssafCents = urssafOn(collectedCents);
   const realisedGross = collectedCents - producedCostCents - afterSales.cents;
-  const realisedNet = realisedGross - collectedFeesCents;
+  const realisedNet = realisedGross - collectedFeesCents - collectedUrssafCents;
 
   // Projected margin: same orders the projected-revenue figure counts, minus
   // the ones whose cost can't be established — those are dropped from both
@@ -749,7 +754,7 @@ router.get('/revenue', (req, res) => {
            OR (balance_status = 'not_created' AND quoted_total_cents IS NOT NULL))
   `).all();
 
-  let projRevenue = 0, projCost = 0, projFees = 0, projOrders = 0, projMissingCost = 0;
+  let projRevenue = 0, projCost = 0, projFees = 0, projUrssaf = 0, projOrders = 0, projMissingCost = 0;
   for (const o of inFlight) {
     const cost = effectiveCost(o);
     if (cost == null) { projMissingCost += 1; continue; }
@@ -760,9 +765,10 @@ router.get('/revenue', (req, res) => {
     projRevenue += total;
     projCost += cost;
     projFees += feeOn(total, 2);
+    projUrssaf += urssafOn(total);
   }
   const projGross = projRevenue - projCost;
-  const projNet = projGross - projFees;
+  const projNet = projGross - projFees - projUrssaf;
 
   const pct = (part, whole) => (whole > 0 ? Math.round((part / whole) * 100) : null);
 
@@ -786,6 +792,7 @@ router.get('/revenue', (req, res) => {
         afterSalesCents: afterSales.cents,
         afterSalesUnpriced: afterSales.unpriced,
         feesCents: collectedFeesCents,
+        urssafCents: collectedUrssafCents,
         grossCents: realisedGross,
         netCents: realisedNet,
         grossPct: pct(realisedGross, collectedCents),
@@ -798,6 +805,7 @@ router.get('/revenue', (req, res) => {
         revenueCents: projRevenue,
         costCents: projCost,
         feesCents: projFees,
+        urssafCents: projUrssaf,
         grossCents: projGross,
         netCents: projNet,
         grossPct: pct(projGross, projRevenue),

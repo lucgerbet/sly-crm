@@ -808,7 +808,7 @@ function RevenueBar({ notify }) {
               <div className="text-[11px] text-ink-secondary mt-0.5">
                 {data.margin?.perOrder?.netCents == null
                   ? 'no produced order yet'
-                  : `net · ${eur(data.margin.perOrder.grossCents)} before Stripe`}
+                  : `net · ${eur(data.margin.perOrder.grossCents)} before Stripe & URSSAF`}
               </div>
             </div>
           </div>

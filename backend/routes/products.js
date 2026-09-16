@@ -22,13 +22,21 @@ export function cnyRate() {
   return Number.isFinite(raw) && raw > 0 ? raw : 7.8;
 }
 
+export function urssafRate() {
+  const raw = Number.parseFloat(getSettings().urssaf_percent);
+  return Number.isFinite(raw) && raw >= 0 ? raw : 0;
+}
+
 // Everything derived hangs off this, so the arithmetic exists exactly once.
 //
 // A landed cost has four parts: the workshop's base price, a percentage
 // surcharge on that base price (the tailored pieces carry 3 %, trousers and
 // shirts none), the quality bonus, and a flat export fee paid in euros. The
 // first three are in yuan and converted together; the fee is added after.
-export function withMargin(row, rate = cnyRate()) {
+//
+// URSSAF is a different animal: a share of the selling price, not of the
+// cost, so it is taken off the margin rather than added to the landed cost.
+export function withMargin(row, rate = cnyRate(), urssafPct = urssafRate()) {
   const cost = Number(row.cost_cny) || 0;
   const bonus = Number(row.bonus_cny) || 0;
   const price = Number(row.price_cents) || 0;
@@ -38,6 +46,9 @@ export function withMargin(row, rate = cnyRate()) {
   const surchargeCents = Math.round((surchargeCny / rate) * 100);
   const costCents = Math.round(((cost + surchargeCny) / rate) * 100) + exportFeeCents;
   const costWithBonusCents = Math.round(((cost + surchargeCny + bonus) / rate) * 100) + exportFeeCents;
+  const urssafCents = Math.round(price * (urssafPct / 100));
+  const marginCents = price - costCents - urssafCents;
+  const marginWithBonusCents = price - costWithBonusCents - urssafCents;
   return {
     ...row,
     is_pack: !!row.is_pack,
@@ -47,21 +58,22 @@ export function withMargin(row, rate = cnyRate()) {
     exportFeeCents,
     costCents,
     costWithBonusCents,
+    urssafCents,
     // "Sèche" = before the quality bonus. Both are shown because the gap
     // between them is exactly what the bonus costs, and that is a decision
-    // Luc revisits.
-    marginCents: price - costCents,
-    marginWithBonusCents: price - costWithBonusCents,
-    marginPct: price ? Math.round(((price - costCents) / price) * 1000) / 10 : null,
-    marginWithBonusPct: price ? Math.round(((price - costWithBonusCents) / price) * 1000) / 10 : null,
+    // Luc revisits. Both are after URSSAF.
+    marginCents,
+    marginWithBonusCents,
+    marginPct: price ? Math.round((marginCents / price) * 1000) / 10 : null,
+    marginWithBonusPct: price ? Math.round((marginWithBonusCents / price) * 1000) / 10 : null,
   };
 }
 
 export function catalogue() {
-  const rate = cnyRate();
+  const rate = cnyRate(), urssaf = urssafRate();
   return db.prepare('SELECT * FROM products WHERE active = 1 ORDER BY sort_order ASC, label ASC')
     .all()
-    .map((r) => withMargin(r, rate));
+    .map((r) => withMargin(r, rate, urssaf));
 }
 
 // Looks a product up by the key an order carries in product_type. Returns the
@@ -74,7 +86,7 @@ export function productCostCents(productType) {
 }
 
 router.get('/', (_req, res) => {
-  res.json({ data: catalogue(), rate: cnyRate() });
+  res.json({ data: catalogue(), rate: cnyRate(), urssafPct: urssafRate() });
 });
 
 // GET /api/products/on-site — what sly-shop is allowed to offer. Narrow and

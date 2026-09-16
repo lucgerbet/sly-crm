@@ -100,6 +100,7 @@ export default function Automation({ notify }) {
         birthday_greeting_body: settings.birthday_greeting_body,
         stripe_fee_percent: settings.stripe_fee_percent ?? '',
         stripe_fee_fixed_cents: settings.stripe_fee_fixed_cents ?? '',
+        urssaf_percent: settings.urssaf_percent ?? '',
         redo_cost_cents: settings.redo_cost_cents ?? '',
         alteration_cost_cents: settings.alteration_cost_cents ?? '',
       };
@@ -243,6 +244,12 @@ export default function Automation({ notify }) {
           </Field>
           <Field label="Stripe fixed fee per payment (€)" hint="Charged twice per order — deposit, then balance.">
             <MoneyInput cents={settings.stripe_fee_fixed_cents} onCents={set('stripe_fee_fixed_cents')} placeholder="0.25" />
+          </Field>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="URSSAF (% of sales)" hint="Micro-entrepreneur contributions, owed on every euro sold. Deducted from the net margin and from each product's margin.">
+            <Input type="number" step="0.1" value={settings.urssaf_percent} onChange={set('urssaf_percent')} placeholder="12.3" />
           </Field>
         </div>
 

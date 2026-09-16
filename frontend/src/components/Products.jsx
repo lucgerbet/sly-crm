@@ -12,13 +12,14 @@ const fmtCny = (n) => (Number.isInteger(n) ? String(n) : n.toFixed(2));
 export default function Products({ notify }) {
   const [rows, setRows] = useState([]);
   const [rate, setRate] = useState(7.8);
+  const [urssafPct, setUrssafPct] = useState(0);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(null);
   const [adding, setAdding] = useState(false);
   const [draft, setDraft] = useState({ key: '', label: '' });
 
   const load = () => api.products()
-    .then(r => { setRows(r.data); setRate(r.rate); })
+    .then(r => { setRows(r.data); setRate(r.rate); setUrssafPct(r.urssafPct || 0); })
     .catch(() => notify?.('Erreur de chargement', 'error'))
     .finally(() => setLoading(false));
   useEffect(() => { load(); }, []);
@@ -89,8 +90,9 @@ export default function Products({ notify }) {
               Le <strong className="text-ink-primary">+&nbsp;%</strong> est le frais appliqué sur le coût
               de base (avant bonus) — 3&nbsp;% sur les pièces tailleur, rien sur pantalon, chemises seules et
               pack de 5 chemises. L'<strong className="text-ink-primary">export</strong> est le forfait
-              d'expédition depuis l'atelier, en euros, par pièce. Le coût € ci-dessous est le coût rendu :
-              base + frais + bonus + export.
+              d'expédition depuis l'atelier, en euros, par pièce. Le coût rendu est donc :
+              base + frais + bonus + export. L'<strong className="text-ink-primary">URSSAF</strong> ({urssafPct}&nbsp;% du prix
+              de vente, réglable dans Automation) est retenue en plus, sur le prix : les deux marges sont après URSSAF.
             </p>
             <p className="text-[13px] text-ink-secondary mt-2">
               Ces coûts alimentent directement la marge du dashboard et celle de chaque commande.
@@ -121,6 +123,7 @@ export default function Products({ notify }) {
               <th className="text-right font-medium px-2 py-3">Bonus ¥</th>
               <th className="text-right font-medium px-2 py-3">Export €</th>
               <th className="text-right font-medium px-2 py-3">Coût rendu €</th>
+              <th className="text-right font-medium px-2 py-3">URSSAF €</th>
               <th className="text-right font-medium px-2 py-3">Marge sèche</th>
               <th className="text-right font-medium px-2 py-3">Marge si satisfait</th>
               <th className="text-center font-medium px-2 py-3">Sur le site</th>
@@ -153,6 +156,9 @@ export default function Products({ notify }) {
                 <Num row={r} field="export_fee_cents" value={r.export_fee_cents == null ? '' : r.export_fee_cents / 100} onSave={save} scale={100} width="w-20" />
                 <td className="px-2 py-2 text-right tabular-nums text-ink-secondary whitespace-nowrap" title={`dont ${eur(r.surchargeCents)} de frais et ${eur(r.exportFeeCents)} d'export`}>
                   {eur(r.costWithBonusCents)}
+                </td>
+                <td className="px-2 py-2 text-right tabular-nums text-ink-secondary whitespace-nowrap">
+                  {eur(r.urssafCents)}
                 </td>
                 <td className="px-2 py-2 text-right tabular-nums whitespace-nowrap">
                   {eur(r.marginCents)}
