@@ -7,6 +7,7 @@ import { useEffect, useState } from 'react';
 import { api } from '../api.js';
 
 const eur = (cents) => (cents == null ? '—' : `${(cents / 100).toFixed(2)} €`);
+const fmtCny = (n) => (Number.isInteger(n) ? String(n) : n.toFixed(2));
 
 export default function Products({ notify }) {
   const [rows, setRows] = useState([]);
@@ -144,7 +145,10 @@ export default function Products({ notify }) {
                 </td>
                 <Num row={r} field="price_cents" value={r.price_cents == null ? '' : r.price_cents / 100} onSave={save} scale={100} />
                 <Num row={r} field="cost_cny" value={r.cost_cny ?? ''} onSave={save} />
-                <Num row={r} field="surcharge_pct" value={r.surcharge_pct ?? ''} onSave={save} width="w-16" />
+                <Num
+                  row={r} field="surcharge_pct" value={r.surcharge_pct ?? ''} onSave={save} width="w-16"
+                  hint={r.surcharge_pct ? `${fmtCny(r.cost_cny * r.surcharge_pct / 100)} ¥ · ${eur(r.surchargeCents)}` : null}
+                />
                 <Num row={r} field="bonus_cny" value={r.bonus_cny ?? ''} onSave={save} />
                 <Num row={r} field="export_fee_cents" value={r.export_fee_cents == null ? '' : r.export_fee_cents / 100} onSave={save} scale={100} width="w-20" />
                 <td className="px-2 py-2 text-right tabular-nums text-ink-secondary whitespace-nowrap" title={`dont ${eur(r.surchargeCents)} de frais et ${eur(r.exportFeeCents)} d'export`}>
@@ -213,7 +217,7 @@ export default function Products({ notify }) {
 // Commits on blur rather than on every keystroke: these numbers drive every
 // margin in the CRM, and typing "1" on the way to "1100" must not briefly
 // rewrite them.
-function Num({ row, field, value, onSave, scale = 1, width = 'w-24' }) {
+function Num({ row, field, value, onSave, scale = 1, width = 'w-24', hint = null }) {
   const [draft, setDraft] = useState(String(value ?? ''));
   useEffect(() => { setDraft(String(value ?? '')); }, [value]);
   return (
@@ -228,6 +232,9 @@ function Num({ row, field, value, onSave, scale = 1, width = 'w-24' }) {
         }}
         className={`${width} border border-transparent hover:border-line focus:border-accent rounded-md px-2 py-1 text-sm text-right tabular-nums outline-none bg-transparent`}
       />
+      {/* What the figure typed above amounts to — a percentage on its own
+          says nothing about the money it moves. */}
+      {hint && <div className="text-[10px] text-ink-secondary tabular-nums whitespace-nowrap pr-2">= {hint}</div>}
     </td>
   );
 }

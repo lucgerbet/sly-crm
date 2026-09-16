@@ -19,6 +19,7 @@ import { Router } from 'express';
 import db from '../db.js';
 import { logMessage } from '../lib/orderHelpers.js';
 import { buildProductionOrderPdf } from '../lib/pdf.js';
+import { buildTailoringOrderXlsx } from '../lib/xlsx.js';
 
 const router = Router();
 
@@ -60,6 +61,11 @@ function page({ title, inner }) {
           padding:12px 15px; margin:0 0 18px; font-size:13px; line-height:1.55; color:${PALETTE.muted}; }
   .foot { text-align:center; margin-top:22px; font-size:10px; letter-spacing:.10em;
           text-transform:uppercase; color:${PALETTE.border}; }
+  a.btn2 {
+    display:block; box-sizing:border-box; background:transparent; color:${PALETTE.muted};
+    border:1px solid ${PALETTE.border}; border-radius:2px; padding:13px 20px; text-decoration:none;
+    text-align:center; font-size:13px; line-height:1.5; margin-top:10px;
+  }
 </style>
 </head><body>
   <div class="wrap">
@@ -102,46 +108,83 @@ router.get('/:token', (req, res) => {
       <p class="ref">${esc(order.order_number || '')}</p>
       ${order.workshop_ack_at ? `
         <div class="seen">Opened ${esc(fmt(order.workshop_ack_at))} · 已于此时打开</div>` : ''}
-      <a class="btn" href="/workshop/${esc(order.workshop_token)}/bon-de-commande.pdf">
-        Open the production order
-        <span class="c">打开生产订单</span>
+      <a class="btn" href="/workshop/${esc(order.workshop_token)}/bon-de-commande.xlsx">
+        Open the production order (Excel)
+        <span class="c">打开生产订单（Excel）</span>
+      </a>
+      <a class="btn2" href="/workshop/${esc(order.workshop_token)}/bon-de-commande.pdf">
+        Open as PDF instead · 也可打开 PDF 版本
       </a>
       <p class="note">
-        The document opens as a PDF — download or print it.<br>
-        文件为 PDF 格式，可下载或打印。
+        The Excel is the full order form — download it.<br>
+        Excel 为完整订单表格，请下载查看。
       </p>
     `,
   }));
 });
 
-// GET /workshop/:token/bon-de-commande.pdf — the docket, and the moment we
-// call the order "taken in hand". Rebuilt from the order rather than served
-// from a stored file, so the workshop always sees the current configuration.
+// Stamped once, never rewritten: a second read (of either document — the
+// Excel is now the primary link, but the PDF stays reachable too, and
+// whichever the workshop opens first is the one that counts) must not
+// restart a clock that has already been measured.
+//
+// Best-effort guard against a mail scanner or link previewer opening the
+// document before a human does — the email links straight here, so that
+// fetch is now possible, and a stamp fired by a robot would report a
+// turnaround the workshop never had. User-Agent sniffing is not proof of
+// anything, so the document is always served either way: only the
+// measurement is withheld. Under-measuring is recoverable; a wrong number
+// is not.
+function stampAckIfHuman(req, order) {
+  const ua = (req.get('user-agent') || '').toLowerCase();
+  const looksAutomated = !ua
+    || /bot|crawl|spider|preview|scan|fetch|monitor|curl|wget|python-requests|okhttp|headless/.test(ua);
+  if (!order.workshop_ack_at && !looksAutomated) {
+    const now = new Date().toISOString();
+    db.prepare(`UPDATE orders SET workshop_ack_at = ?, updated_at = datetime('now') WHERE id = ?`)
+      .run(now, order.id);
+    logMessage(order.client_id, 'workshop_update',
+      `Atelier — bon de commande ouvert (${order.order_number || order.id})`);
+  }
+}
+
+// GET /workshop/:token/bon-de-commande.xlsx — the primary docket link
+// (2026-09-16: Luc's own standardized order form replaces the PDF as the
+// document the workshop is pointed at first — see lib/xlsx.js). Rebuilt
+// from the order rather than served from a stored file, so the workshop
+// always sees the current configuration.
+router.get('/:token/bon-de-commande.xlsx', async (req, res) => {
+  try {
+    const order = db.prepare('SELECT * FROM orders WHERE workshop_token = ?').get(req.params.token);
+    if (!order) return notFound(res);
+
+    stampAckIfHuman(req, order);
+
+    const client = db.prepare('SELECT * FROM clients WHERE id = ?').get(order.client_id);
+    const xlsx = await buildTailoringOrderXlsx({
+      order, client, config: JSON.parse(order.config_json || '{}'),
+    });
+
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="bon-de-commande-${order.order_number || order.id}.xlsx"`);
+    // The stamp must reflect a human opening it, so no cache or proxy may
+    // serve this without the request reaching us.
+    res.setHeader('Cache-Control', 'no-store');
+    res.send(xlsx);
+  } catch (e) {
+    console.error('[workshop] docket (xlsx) failed:', e.message);
+    res.status(500).send(page({ title: 'SLY Atelier', inner: '<h1>Error</h1><p class="cn">出错了</p>' }));
+  }
+});
+
+// GET /workshop/:token/bon-de-commande.pdf — secondary docket link, kept
+// alongside the Excel above for whoever prefers a quick read-only view.
 router.get('/:token/bon-de-commande.pdf', async (req, res) => {
   try {
     const order = db.prepare('SELECT * FROM orders WHERE workshop_token = ?').get(req.params.token);
     if (!order) return notFound(res);
 
-    // Stamped once, never rewritten: a second read must not restart a clock
-    // that has already been measured.
-    //
-    // Best-effort guard against a mail scanner or link previewer opening the
-    // PDF before a human does — the email links straight here, so that fetch
-    // is now possible, and a stamp fired by a robot would report a turnaround
-    // the workshop never had. User-Agent sniffing is not proof of anything, so
-    // the document is always served either way: only the measurement is
-    // withheld. Under-measuring is recoverable; a wrong number is not.
-    const ua = (req.get('user-agent') || '').toLowerCase();
-    const looksAutomated = !ua
-      || /bot|crawl|spider|preview|scan|fetch|monitor|curl|wget|python-requests|okhttp|headless/.test(ua);
-
-    if (!order.workshop_ack_at && !looksAutomated) {
-      const now = new Date().toISOString();
-      db.prepare(`UPDATE orders SET workshop_ack_at = ?, updated_at = datetime('now') WHERE id = ?`)
-        .run(now, order.id);
-      logMessage(order.client_id, 'workshop_update',
-        `Atelier — bon de commande ouvert (${order.order_number || order.id})`);
-    }
+    stampAckIfHuman(req, order);
 
     const client = db.prepare('SELECT * FROM clients WHERE id = ?').get(order.client_id);
     const pdf = await buildProductionOrderPdf({

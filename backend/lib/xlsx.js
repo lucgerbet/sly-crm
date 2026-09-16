@@ -122,8 +122,17 @@ export async function buildTailoringOrderXlsx({ order, client, config }) {
   // workshop needs — see pdf.js's own jacket/trousers reference rendering,
   // added the same session this template was shared for the same reason.
   const fabricRef = jacket.fabricReference || config?.fabricReference || '';
-  const liningRef = jacket.liningReference || jacket.lining || trousers.lining || '';
-  const jacketButtonRef = jacket.buttonReference || jacket.buttonsMaterial || '';
+  // jacket.lining (not jacket.liningReference) is the legacy pre-2026-08-14
+  // field — it holds a real reference string on old orders (e.g. "A710"),
+  // unlike trousers.lining, which is a full/half/none CATEGORY on a
+  // DIFFERENT garment and must never be used here even as a last resort —
+  // it isn't a reference and isn't the jacket's (2026-09-12 bug: it was
+  // leaking into this cell whenever liningReference was left blank).
+  const liningRef = jacket.liningReference || jacket.lining || '';
+  // buttonsMaterial is a material description ("corne teintée bleu"), not a
+  // reference code — showing it here when buttonReference is blank mixed up
+  // the two concepts, so it's no longer used as a fallback (2026-09-12).
+  const jacketButtonRef = jacket.buttonReference || '';
   const trouserButtonRef = trousers.buttonReference || jacketButtonRef;
   const fabricColor = criteria.colorFamilies?.[0] ? titleCase(criteria.colorFamilies[0]) : '';
 
