@@ -85,8 +85,15 @@ export default function Products({ notify }) {
               ce que tu reverses à la production quand le client est satisfait.
             </p>
             <p className="text-[13px] text-ink-secondary mt-2">
+              Le <strong className="text-ink-primary">+&nbsp;%</strong> est le frais appliqué sur le coût
+              de base (avant bonus) — 3&nbsp;% sur les pièces tailleur, rien sur pantalon, chemises seules et
+              pack de 5 chemises. L'<strong className="text-ink-primary">export</strong> est le forfait
+              d'expédition depuis l'atelier, en euros, par pièce. Le coût € ci-dessous est le coût rendu :
+              base + frais + bonus + export.
+            </p>
+            <p className="text-[13px] text-ink-secondary mt-2">
               Ces coûts alimentent directement la marge du dashboard et celle de chaque commande.
-              Marges hors transport, taxes et frais Stripe.
+              Marges hors taxes et frais Stripe.
             </p>
           </div>
           <label className="block shrink-0">
@@ -109,8 +116,10 @@ export default function Products({ notify }) {
               <th className="text-left font-medium px-4 py-3">Produit</th>
               <th className="text-right font-medium px-2 py-3">Prix €</th>
               <th className="text-right font-medium px-2 py-3">Coût ¥</th>
+              <th className="text-right font-medium px-2 py-3">+ %</th>
               <th className="text-right font-medium px-2 py-3">Bonus ¥</th>
-              <th className="text-right font-medium px-2 py-3">Coût €</th>
+              <th className="text-right font-medium px-2 py-3">Export €</th>
+              <th className="text-right font-medium px-2 py-3">Coût rendu €</th>
               <th className="text-right font-medium px-2 py-3">Marge sèche</th>
               <th className="text-right font-medium px-2 py-3">Marge si satisfait</th>
               <th className="text-center font-medium px-2 py-3">Sur le site</th>
@@ -135,8 +144,10 @@ export default function Products({ notify }) {
                 </td>
                 <Num row={r} field="price_cents" value={r.price_cents == null ? '' : r.price_cents / 100} onSave={save} scale={100} />
                 <Num row={r} field="cost_cny" value={r.cost_cny ?? ''} onSave={save} />
+                <Num row={r} field="surcharge_pct" value={r.surcharge_pct ?? ''} onSave={save} width="w-16" />
                 <Num row={r} field="bonus_cny" value={r.bonus_cny ?? ''} onSave={save} />
-                <td className="px-2 py-2 text-right tabular-nums text-ink-secondary whitespace-nowrap">
+                <Num row={r} field="export_fee_cents" value={r.export_fee_cents == null ? '' : r.export_fee_cents / 100} onSave={save} scale={100} width="w-20" />
+                <td className="px-2 py-2 text-right tabular-nums text-ink-secondary whitespace-nowrap" title={`dont ${eur(r.surchargeCents)} de frais et ${eur(r.exportFeeCents)} d'export`}>
                   {eur(r.costWithBonusCents)}
                 </td>
                 <td className="px-2 py-2 text-right tabular-nums whitespace-nowrap">
@@ -202,7 +213,7 @@ export default function Products({ notify }) {
 // Commits on blur rather than on every keystroke: these numbers drive every
 // margin in the CRM, and typing "1" on the way to "1100" must not briefly
 // rewrite them.
-function Num({ row, field, value, onSave, scale = 1 }) {
+function Num({ row, field, value, onSave, scale = 1, width = 'w-24' }) {
   const [draft, setDraft] = useState(String(value ?? ''));
   useEffect(() => { setDraft(String(value ?? '')); }, [value]);
   return (
@@ -215,7 +226,7 @@ function Num({ row, field, value, onSave, scale = 1 }) {
           if (now === String(value ?? '')) return;
           onSave(row, { [field]: now === '' ? '' : Number(now) * scale });
         }}
-        className="w-24 border border-transparent hover:border-line focus:border-accent rounded-md px-2 py-1 text-sm text-right tabular-nums outline-none bg-transparent"
+        className={`${width} border border-transparent hover:border-line focus:border-accent rounded-md px-2 py-1 text-sm text-right tabular-nums outline-none bg-transparent`}
       />
     </td>
   );

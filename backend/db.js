@@ -715,6 +715,20 @@ export function migrate() {
   // alteration read as costing nothing.
   addColumn('order_alterations', 'cost_cents', 'INTEGER');
 
+  // Two costs the workshop price does not carry, added 2026-09-17 once Luc
+  // had the full picture of what a piece really costs to land in France:
+  //   export_fee_cents — shipping/export out of China, roughly 50 EUR a piece,
+  //     in euros because that is the currency it is paid in;
+  //   surcharge_pct — a 3 % fee on the workshop's base price (before bonus)
+  //     for the tailored pieces; trousers, single shirts and the 5-shirt pack
+  //     are exempt.
+  // Both are per product, so an exception is an edit in the catalogue rather
+  // than a rule in the code. Products created after this get the export fee
+  // by default and no surcharge until one is typed in.
+  addColumn('products', 'export_fee_cents', 'INTEGER DEFAULT 5000');
+  addColumn('products', 'surcharge_pct', 'REAL');
+  // The 3 % surcharge itself is applied below, after the catalogue seed.
+
   // Links a redeemed gift's resulting order back to the gift_cards row that
   // paid for it — added post-creation like the other late columns above
   // (gift_cards itself is created after orders, so it couldn't be a FK in
@@ -797,6 +811,15 @@ export function migrate() {
   ].forEach(([key, label, order, price, cost, bonus, pack, site]) => {
     product.run(randomBytes(16).toString('hex'), key, label, order, price, cost, bonus, pack, site);
   });
+  // Surcharge defaults — after the seed so a fresh database gets them on its
+  // first boot too. One-shot: only rows that have never had a value. An edit
+  // to 0 by Luc sticks, because 0 is not NULL.
+  db.prepare(`
+    UPDATE products SET surcharge_pct = 3
+    WHERE surcharge_pct IS NULL
+      AND key IN ('suit', 'blazer', 'pack_suit_shirt', 'pack_suit_3shirts', 'pack_suit_5shirts')
+  `).run();
+  db.prepare('UPDATE products SET surcharge_pct = 0 WHERE surcharge_pct IS NULL').run();
 
   // Birthday email automation — disabled by default until RESEND_API_KEY is set
   // and the user has reviewed the template wording (see routes/automation.js).

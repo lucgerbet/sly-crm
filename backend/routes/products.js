@@ -23,17 +23,28 @@ export function cnyRate() {
 }
 
 // Everything derived hangs off this, so the arithmetic exists exactly once.
+//
+// A landed cost has four parts: the workshop's base price, a percentage
+// surcharge on that base price (the tailored pieces carry 3 %, trousers and
+// shirts none), the quality bonus, and a flat export fee paid in euros. The
+// first three are in yuan and converted together; the fee is added after.
 export function withMargin(row, rate = cnyRate()) {
   const cost = Number(row.cost_cny) || 0;
   const bonus = Number(row.bonus_cny) || 0;
   const price = Number(row.price_cents) || 0;
-  const costCents = Math.round((cost / rate) * 100);
-  const costWithBonusCents = Math.round(((cost + bonus) / rate) * 100);
+  const surchargePct = Number(row.surcharge_pct) || 0;
+  const exportFeeCents = Math.round(Number(row.export_fee_cents)) || 0;
+  const surchargeCny = cost * (surchargePct / 100);
+  const surchargeCents = Math.round((surchargeCny / rate) * 100);
+  const costCents = Math.round(((cost + surchargeCny) / rate) * 100) + exportFeeCents;
+  const costWithBonusCents = Math.round(((cost + surchargeCny + bonus) / rate) * 100) + exportFeeCents;
   return {
     ...row,
     is_pack: !!row.is_pack,
     on_site: !!row.on_site,
     active: !!row.active,
+    surchargeCents,
+    exportFeeCents,
     costCents,
     costWithBonusCents,
     // "Sèche" = before the quality bonus. Both are shown because the gap
@@ -87,6 +98,8 @@ function clean(body, existing = {}) {
     ['price_cents', (v) => Math.round(Number(v))],
     ['cost_cny', (v) => Number(v)],
     ['bonus_cny', (v) => Number(v)],
+    ['surcharge_pct', (v) => Number(v)],
+    ['export_fee_cents', (v) => Math.round(Number(v))],
     ['sort_order', (v) => Math.round(Number(v))],
   ]) {
     if (body[field] === undefined) continue;

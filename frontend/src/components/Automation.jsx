@@ -98,9 +98,6 @@ export default function Automation({ notify }) {
         birthday_reminder_body: settings.birthday_reminder_body,
         birthday_greeting_subject: settings.birthday_greeting_subject,
         birthday_greeting_body: settings.birthday_greeting_body,
-        default_cost_suit_cents: settings.default_cost_suit_cents ?? '',
-        default_cost_blazer_cents: settings.default_cost_blazer_cents ?? '',
-        default_cost_trousers_cents: settings.default_cost_trousers_cents ?? '',
         stripe_fee_percent: settings.stripe_fee_percent ?? '',
         stripe_fee_fixed_cents: settings.stripe_fee_fixed_cents ?? '',
         redo_cost_cents: settings.redo_cost_cents ?? '',
@@ -220,23 +217,15 @@ export default function Automation({ notify }) {
 
       <div className="bg-surface border border-line rounded-xl p-5 space-y-4">
         <div className="text-[11px] font-medium text-ink-secondary uppercase tracking-[0.08em]">Production costs &amp; payment fees</div>
+        {/* Per-piece production costs used to live here. They now come from
+            the catalogue (Produits tab: workshop price in yuan, surcharge,
+            bonus, export fee), so the margin can never read two different
+            costs for the same piece. */}
         <div className="text-xs text-ink-secondary">
-          What each piece costs you to make — workshop, fabric, shipping. Applied automatically to every
-          settled order of that type, so you never retype it. A cost entered on an individual order overrides
-          it. Leave a piece blank if you don't know its cost yet: its orders are excluded from the margin
-          rather than counted as pure profit.
-        </div>
-
-        <div className="grid grid-cols-3 gap-3">
-          <Field label="Suit — cost (€)">
-            <MoneyInput cents={settings.default_cost_suit_cents} onCents={set('default_cost_suit_cents')} placeholder="166" />
-          </Field>
-          <Field label="Blazer — cost (€)">
-            <MoneyInput cents={settings.default_cost_blazer_cents} onCents={set('default_cost_blazer_cents')} placeholder="not set" />
-          </Field>
-          <Field label="Trousers — cost (€)">
-            <MoneyInput cents={settings.default_cost_trousers_cents} onCents={set('default_cost_trousers_cents')} placeholder="not set" />
-          </Field>
+          What each piece costs to make — workshop price, surcharge, quality bonus and export fee — is set
+          per product in the <strong className="text-ink-primary">Produits</strong> tab and applied automatically
+          to every settled order of that type. A cost entered on an individual order overrides it. What
+          remains here are the costs that are not tied to a product.
         </div>
 
         <div className="grid grid-cols-2 gap-3">
@@ -258,7 +247,7 @@ export default function Automation({ notify }) {
         </div>
 
         <div className="text-[11px] text-ink-secondary">
-          These four figures are what the Dashboard's gross and net margin are built from — change one and both
+          Together with the catalogue, these figures are what the Dashboard's gross and net margin are built from — change one and both
           recompute across every settled order, including past ones.
         </div>
       </div>
