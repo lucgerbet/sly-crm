@@ -693,8 +693,11 @@ router.get('/revenue', (req, res) => {
   const feeOn = (cents, payments) => Math.round(cents * (feePct / 100)) + feeFixed * payments;
   // URSSAF is owed on every euro sold, so it sits with the fees: taken off
   // the net margin, not off the gross.
+  // Both are shares of sales, so they are computed together and reported as
+  // one figure; the versement libératoire is income tax settled the same way.
   const urssafPct = Number.parseFloat(settings.urssaf_percent) || 0;
-  const urssafOn = (cents) => Math.round(cents * (urssafPct / 100));
+  const liberatoirePct = Number.parseFloat(settings.versement_liberatoire_percent) || 0;
+  const urssafOn = (cents) => Math.round(cents * (urssafPct / 100)) + Math.round(cents * (liberatoirePct / 100));
 
   // Per-order cost wins when set; otherwise the catalogue's cost for that
   // piece, bonus included. Unknown stays null — never zero.

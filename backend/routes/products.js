@@ -27,6 +27,12 @@ export function urssafRate() {
   return Number.isFinite(raw) && raw >= 0 ? raw : 0;
 }
 
+// Versement libératoire — income tax paid as a share of sales, next to URSSAF.
+export function liberatoireRate() {
+  const raw = Number.parseFloat(getSettings().versement_liberatoire_percent);
+  return Number.isFinite(raw) && raw >= 0 ? raw : 0;
+}
+
 // The same Stripe pricing the dashboard applies to real payments — read from
 // settings, so the catalogue's estimate and the dashboard's never diverge.
 export function stripeFees() {
@@ -41,10 +47,11 @@ export function stripeFees() {
 
 // Charges = costs of selling, as opposed to costs of making: everything that
 // comes off the price rather than going into the piece.
-function chargesOn(priceCents, payments, urssafPct, stripe) {
+function chargesOn(priceCents, payments, urssafPct, liberatoirePct, stripe) {
   const urssafCents = Math.round(priceCents * (urssafPct / 100));
+  const liberatoireCents = Math.round(priceCents * (liberatoirePct / 100));
   const stripeCents = Math.round(priceCents * (stripe.pct / 100)) + stripe.fixedCents * payments;
-  return { urssafCents, stripeCents };
+  return { urssafCents, liberatoireCents, stripeCents };
 }
 
 // Everything derived hangs off this, so the arithmetic exists exactly once.
@@ -58,7 +65,7 @@ function chargesOn(priceCents, payments, urssafPct, stripe) {
 // of the cost, so they are taken off the margin rather than added to the
 // landed cost. Stripe's fixed part is charged once per transaction, and a
 // deposit-then-balance sale is two of them.
-export function withMargin(row, rate = cnyRate(), urssafPct = urssafRate(), stripe = stripeFees()) {
+export function withMargin(row, rate = cnyRate(), urssafPct = urssafRate(), stripe = stripeFees(), liberatoirePct = liberatoireRate()) {
   const cost = Number(row.cost_cny) || 0;
   const bonus = Number(row.bonus_cny) || 0;
   const price = Number(row.price_cents) || 0;
@@ -69,9 +76,10 @@ export function withMargin(row, rate = cnyRate(), urssafPct = urssafRate(), stri
   const costCents = Math.round(((cost + surchargeCny) / rate) * 100) + exportFeeCents;
   const costWithBonusCents = Math.round(((cost + surchargeCny + bonus) / rate) * 100) + exportFeeCents;
   const payments = Math.max(1, Math.round(Number(row.payments)) || 2);
-  const { urssafCents, stripeCents } = chargesOn(price, payments, urssafPct, stripe);
-  const marginCents = price - costCents - urssafCents - stripeCents;
-  const marginWithBonusCents = price - costWithBonusCents - urssafCents - stripeCents;
+  const { urssafCents, liberatoireCents, stripeCents } = chargesOn(price, payments, urssafPct, liberatoirePct, stripe);
+  const charges = urssafCents + liberatoireCents + stripeCents;
+  const marginCents = price - costCents - charges;
+  const marginWithBonusCents = price - costWithBonusCents - charges;
   return {
     ...row,
     is_pack: !!row.is_pack,
@@ -83,6 +91,7 @@ export function withMargin(row, rate = cnyRate(), urssafPct = urssafRate(), stri
     costWithBonusCents,
     payments,
     urssafCents,
+    liberatoireCents,
     stripeCents,
     // "Sèche" = before the quality bonus. Both are shown because the gap
     // between them is exactly what the bonus costs, and that is a decision
@@ -95,10 +104,10 @@ export function withMargin(row, rate = cnyRate(), urssafPct = urssafRate(), stri
 }
 
 export function catalogue() {
-  const rate = cnyRate(), urssaf = urssafRate(), stripe = stripeFees();
+  const rate = cnyRate(), urssaf = urssafRate(), stripe = stripeFees(), lib = liberatoireRate();
   return db.prepare('SELECT * FROM products WHERE active = 1 ORDER BY sort_order ASC, label ASC')
     .all()
-    .map((r) => withMargin(r, rate, urssaf, stripe));
+    .map((r) => withMargin(r, rate, urssaf, stripe, lib));
 }
 
 // Looks a product up by the key an order carries in product_type. Returns the
@@ -111,7 +120,7 @@ export function productCostCents(productType) {
 }
 
 router.get('/', (_req, res) => {
-  res.json({ data: catalogue(), rate: cnyRate(), urssafPct: urssafRate(), stripe: stripeFees() });
+  res.json({ data: catalogue(), rate: cnyRate(), urssafPct: urssafRate(), liberatoirePct: liberatoireRate(), stripe: stripeFees() });
 });
 
 // GET /api/products/on-site — what sly-shop is allowed to offer. Narrow and

@@ -265,7 +265,7 @@ function MoneyPanels({ cur, range }) {
         </div>
         {real.urssafCents > 0 && (
           <div className="text-[11px] text-ink-secondary mt-0.5 whitespace-nowrap">
-            and {eur(real.urssafCents)} URSSAF
+            and {eur(real.urssafCents)} URSSAF + versement libératoire
           </div>
         )}
         {gaps > 0 && (

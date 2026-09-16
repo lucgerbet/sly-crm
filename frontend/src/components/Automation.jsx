@@ -101,6 +101,7 @@ export default function Automation({ notify }) {
         stripe_fee_percent: settings.stripe_fee_percent ?? '',
         stripe_fee_fixed_cents: settings.stripe_fee_fixed_cents ?? '',
         urssaf_percent: settings.urssaf_percent ?? '',
+        versement_liberatoire_percent: settings.versement_liberatoire_percent ?? '',
         redo_cost_cents: settings.redo_cost_cents ?? '',
         alteration_cost_cents: settings.alteration_cost_cents ?? '',
       };
@@ -250,6 +251,9 @@ export default function Automation({ notify }) {
         <div className="grid grid-cols-2 gap-3">
           <Field label="URSSAF (% of sales)" hint="Micro-entrepreneur contributions, owed on every euro sold. Deducted from the net margin and from each product's margin.">
             <Input type="number" step="0.1" value={settings.urssaf_percent} onChange={set('urssaf_percent')} placeholder="12.3" />
+          </Field>
+          <Field label="Versement libératoire (% of sales)" hint="Income tax settled as a share of sales, on top of URSSAF. Deducted the same way.">
+            <Input type="number" step="0.1" value={settings.versement_liberatoire_percent} onChange={set('versement_liberatoire_percent')} placeholder="1" />
           </Field>
         </div>
 

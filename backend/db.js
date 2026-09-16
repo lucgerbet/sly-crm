@@ -797,6 +797,10 @@ export function migrate() {
   // from the net margin, never from the gross — it is a tax on revenue, not
   // a cost of making the piece.
   seed.run('urssaf_percent', '12.3');
+  // Versement libératoire de l'impôt sur le revenu: income tax settled as a
+  // flat share of sales alongside the URSSAF contributions. Same nature,
+  // same treatment — off the net margin.
+  seed.run('versement_liberatoire_percent', '1');
 
   // Catalogue rows. Prices and costs given by Luc on 2026-08-23; packs are
   // priced as a bundle, and their cost is the sum of what goes in them.
