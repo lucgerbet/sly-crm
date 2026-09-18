@@ -95,6 +95,7 @@ router.get('/search', requireIntakeSecret, (req, res) => {
     SELECT o.id AS order_id, o.order_number, o.product_type, o.config_summary, o.shop_config_json,
            o.config_json, o.config_source,
            o.deposit_status, o.balance_status, o.status, o.created_at,
+           o.balance_amount_cents, o.stripe_payment_link_url,
            c.id AS client_id, c.first_name, c.last_name, c.email, c.phone, c.address
     FROM orders o
     JOIN clients c ON c.id = o.client_id
@@ -125,6 +126,12 @@ router.get('/search', requireIntakeSecret, (req, res) => {
     finalConfig: r.config_source === 'order_tool_final' ? JSON.parse(r.config_json || '{}') : null,
     depositStatus: r.deposit_status,
     balanceStatus: r.balance_status,
+    // This order's own balance link, so the tool shows the link that
+    // belongs to the order on screen rather than whatever it last created —
+    // the link Luca was sent on 2026-09-18 was Paul's, left over in the
+    // tool's component state from the previous meeting.
+    balanceAmountCents: r.balance_amount_cents,
+    paymentLinkUrl: r.balance_status === 'link_created' ? r.stripe_payment_link_url : null,
     status: r.status,
     createdAt: r.created_at,
   }));
@@ -1200,7 +1207,7 @@ router.get('/production-board', (req, res) => {
            o.sent_to_workshop_at, o.in_production_at, o.ready_at,
            o.shipped_at, o.received_at, o.delivered_at, o.carrier, o.tracking_number,
            o.cost_cents, o.quoted_total_cents,
-           o.workshop_ack_at, o.workshop_reminder_sent_at,
+           o.workshop_ack_at, o.workshop_reminder_sent_at, o.balance_link_resent_at,
            o.config_json, o.shop_config_json, c.measurements_json,
            o.finalized_at, a.starts_at AS appointment_at,
            o.created_at,
@@ -1580,6 +1587,51 @@ router.post('/:id/send-docket', async (req, res) => {
 // POST /api/orders/:id/remind-workshop — chases an unopened docket. Refused
 // once the workshop has actually opened it: chasing someone who already
 // answered is how a supplier starts ignoring your emails.
+// Re-sends the balance link to the client, on demand. The automated chases
+// (balanceReminderJob) run on their own schedule; this is Luc deciding "now",
+// from the CRM or from the stylist tool — and it is the only sanctioned way
+// to get a link to a client, so the link can never be the wrong order's.
+async function resendBalanceLink(orderId) {
+  const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId);
+  if (!order) return { status: 404, body: { error: 'Order not found' } };
+  if (order.balance_status === 'paid') return { status: 409, body: { error: 'Le solde est déjà réglé' } };
+  if (order.balance_status !== 'link_created' || !order.stripe_payment_link_url) {
+    return { status: 409, body: { error: "Pas de lien de solde — actez d'abord la commande (lien de solde) depuis l'outil de prise de commande" } };
+  }
+  const client = db.prepare('SELECT * FROM clients WHERE id = ?').get(order.client_id);
+  if (!client?.email) return { status: 409, body: { error: "Le client n'a pas d'adresse email" } };
+
+  const settings = getSettings();
+  const { subject, html, text } = buildBalanceEmail({ stage: 'reminder1', order, client, settings });
+  const result = await sendEmail({ to: client.email, subject, text, html });
+  if (!result.ok) return { status: 502, body: { error: result.error || "L'email n'est pas parti" } };
+
+  db.prepare("UPDATE orders SET balance_link_resent_at = datetime('now') WHERE id = ?").run(order.id);
+  logMessage(client.id, 'balance_link_resent', `${subject}\n\n${text}`);
+  return { status: 200, body: { ok: true, sentTo: client.email, amountCents: order.balance_amount_cents } };
+}
+
+// From the stylist tool (secret).
+router.post('/resend-balance-link', requireIntakeSecret, async (req, res) => {
+  try {
+    const { status, body } = await resendBalanceLink(req.body?.orderId);
+    res.status(status).json(body);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// From the CRM's own Orders tab (Basic Auth).
+router.post('/:id/resend-balance-link', async (req, res) => {
+  try {
+    const { status, body } = await resendBalanceLink(req.params.id);
+    if (status !== 200) return res.status(status).json(body);
+    res.json({ ...body, order: db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id) });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 router.post('/:id/remind-workshop', async (req, res) => {
   try {
     const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id);

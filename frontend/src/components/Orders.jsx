@@ -354,6 +354,22 @@ export default function Orders({ notify, onSelectClient }) {
                       <div className="text-ink-secondary">
                         of {fmtMoney((o.deposit_amount_cents || 0) / 100 + (o.balance_amount_cents || 0) / 100)}
                       </div>
+                      {/* The one sanctioned way to get a balance link in front
+                          of a client: the email carries the link that belongs
+                          to this order, and nothing is ever copy-pasted. */}
+                      <button
+                        type="button"
+                        disabled={saving === o.id}
+                        onClick={() => run(o.id, () => api.resendBalanceLink(o.id), `Lien de solde renvoyé à ${o.email}`)}
+                        className="mt-1 text-[11px] text-accent hover:underline disabled:opacity-40"
+                      >
+                        Renvoyer le lien ✉
+                      </button>
+                      {(o.balance_link_resent_at || o.balance_reminder_2_sent_at || o.balance_reminder_1_sent_at) && (
+                        <div className="text-[10px] text-ink-secondary">
+                          dernier envoi {fmtDate(o.balance_link_resent_at || o.balance_reminder_2_sent_at || o.balance_reminder_1_sent_at)}
+                        </div>
+                      )}
                     </>
                   ) : o.quoted_total_cents ? (
                     // No fitting call yet, so nothing is agreed — but the site

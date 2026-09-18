@@ -521,6 +521,7 @@ export function migrate() {
   // UI can show "relancé il y a 2 j" rather than inviting a third chase in an
   // afternoon.
   addColumn('orders', 'workshop_reminder_sent_at', 'TEXT');
+  addColumn('orders', 'balance_link_resent_at', 'TEXT'); // last manual re-send of the balance link
   addColumn('orders', 'workshop_ack_at', 'TEXT');
   addColumn('orders', 'workshop_done_at', 'TEXT');
   try { db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_workshop_token ON orders(workshop_token)'); } catch (_) { /* exists */ }

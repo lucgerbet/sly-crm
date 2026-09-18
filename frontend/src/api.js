@@ -56,6 +56,7 @@ export const api = {
   afterSalesStats: () => request('/orders/aftersales-stats'),
   sendDocket: (id) => request(`/orders/${id}/send-docket`, { method: 'POST' }),
   remindWorkshop: (id) => request(`/orders/${id}/remind-workshop`, { method: 'POST' }),
+  resendBalanceLink: (id) => request(`/orders/${id}/resend-balance-link`, { method: 'POST' }),
   regions: () => request('/regions'),
   invoices: (params = {}) => request(`/invoices?${new URLSearchParams(
     Object.fromEntries(Object.entries(params).filter(([, v]) => v != null && v !== '')),
