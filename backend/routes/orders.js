@@ -87,6 +87,14 @@ router.post('/intake', requireIntakeSecret, (req, res) => {
 // the stylist can link the meeting to a real online-paid deposit instead of
 // re-entering the client from scratch. `depositStatus` in the response is
 // the server-truth signal the caller must trust over any local state.
+// Columns that hold JSON as text, or a plain value on old rows: never let
+// one malformed cell break the whole search.
+function safeJson(v, fallback) {
+  if (v == null || v === '') return fallback;
+  if (typeof v !== 'string') return v;
+  try { return JSON.parse(v); } catch { return fallback; }
+}
+
 router.get('/search', requireIntakeSecret, (req, res) => {
   const q = (req.query.q || '').toString().trim();
   if (q.length < 2) return res.json({ data: [] });
@@ -95,8 +103,13 @@ router.get('/search', requireIntakeSecret, (req, res) => {
     SELECT o.id AS order_id, o.order_number, o.product_type, o.config_summary, o.shop_config_json,
            o.config_json, o.config_source,
            o.deposit_status, o.balance_status, o.status, o.created_at,
-           o.balance_amount_cents, o.stripe_payment_link_url,
-           c.id AS client_id, c.first_name, c.last_name, c.email, c.phone, c.address
+           o.balance_amount_cents, o.stripe_payment_link_url, o.deposit_amount_cents,
+           o.workshop_deadline, o.production_notes,
+           c.id AS client_id, c.first_name, c.last_name, c.email, c.phone, c.address,
+           c.birth_date, c.nationality, c.profession, c.company, c.job_title, c.sector,
+           c.suit_frequency, c.travel_frequency, c.wardrobe_size, c.style_direction, c.interests,
+           c.made_to_measure_reason, c.made_to_measure_reason_note, c.referral_interest, c.referral_names,
+           c.source, c.measurements_json
     FROM orders o
     JOIN clients c ON c.id = o.client_id
     WHERE o.order_number LIKE ? OR c.first_name LIKE ? OR c.last_name LIKE ? OR c.email LIKE ?
@@ -131,7 +144,26 @@ router.get('/search', requireIntakeSecret, (req, res) => {
     // the link Luca was sent on 2026-09-18 was Paul's, left over in the
     // tool's component state from the previous meeting.
     balanceAmountCents: r.balance_amount_cents,
+    depositAmountCents: r.deposit_amount_cents,
     paymentLinkUrl: r.balance_status === 'link_created' ? r.stripe_payment_link_url : null,
+    workshopDeadline: r.workshop_deadline,
+    productionNotes: r.production_notes,
+    // Everything the tool already told the CRM about this person, handed
+    // back so a second meeting starts from what is known rather than from
+    // blank fields (Luca's second order, 2026-09-18: date of birth,
+    // profession and measurements all re-asked for nothing).
+    profile: {
+      birth_date: r.birth_date, nationality: r.nationality, profession: r.profession,
+      company: r.company, job_title: r.job_title, sector: r.sector,
+      suit_frequency: r.suit_frequency, travel_frequency: r.travel_frequency,
+      wardrobe_size: r.wardrobe_size, style_direction: r.style_direction,
+      interests: safeJson(r.interests, []),
+      made_to_measure_reason: r.made_to_measure_reason,
+      made_to_measure_reason_note: r.made_to_measure_reason_note,
+      referral_interest: r.referral_interest, referral_names: r.referral_names,
+      source: r.source,
+    },
+    measurements: safeJson(r.measurements_json, null),
     status: r.status,
     createdAt: r.created_at,
   }));
