@@ -143,6 +143,7 @@ export default function Orders({ notify, onSelectClient }) {
   // 'pre_meeting' = deposits paid / calls booked, nothing specified yet.
   const [scope, setScope] = useState('production');
   const [preMeetingCount, setPreMeetingCount] = useState(0);
+  const [finishedCount, setFinishedCount] = useState(0);
   const [expanded, setExpanded] = useState(null);
   const [saving, setSaving] = useState(null);
 
@@ -154,6 +155,7 @@ export default function Orders({ notify, onSelectClient }) {
         setSeamstresses(r.seamstresses || []);
         setCostDefaults(r.costDefaults || {});
         setPreMeetingCount(r.counts?.preMeeting || 0);
+        setFinishedCount(r.counts?.finished || 0);
       })
       .catch(() => notify('Error loading orders', 'error'))
       .finally(() => setLoading(false));
@@ -184,7 +186,7 @@ export default function Orders({ notify, onSelectClient }) {
   }, [rows]);
 
   const visible = useMemo(() => {
-    if (filter === 'active') return rows;
+    if (filter === 'active') return rows.filter(r => r.production_status !== 'finished');
     if (filter === 'late') return rows.filter(r => r.is_late);
     return rows.filter(r => r.production_status === filter);
   }, [rows, filter]);
@@ -230,10 +232,10 @@ export default function Orders({ notify, onSelectClient }) {
           scope rather than filtering, because the pre-meeting rows have no
           production stage to filter by. */}
       <div className="flex items-center gap-2">
-        <FilterChip active={scope === 'production'} onClick={() => { setScope('production'); setFilter('active'); }}>
+        <FilterChip active={scope === 'production'} onClick={() => { setScope('production'); setIncludeFinished(false); setFilter('active'); }}>
           Commandes
         </FilterChip>
-        <FilterChip active={scope === 'pre_meeting'} onClick={() => { setScope('pre_meeting'); setFilter('active'); }}>
+        <FilterChip active={scope === 'pre_meeting'} onClick={() => { setScope('pre_meeting'); setIncludeFinished(false); setFilter('active'); }}>
           Avant RDV <Count n={preMeetingCount} />
         </FilterChip>
         <span className="text-[11px] text-ink-secondary ml-1">
@@ -244,23 +246,24 @@ export default function Orders({ notify, onSelectClient }) {
       </div>
 
       <div className={`flex flex-wrap items-center gap-2 ${scope === 'pre_meeting' ? 'hidden' : ''}`}>
-        <FilterChip active={filter === 'active'} onClick={() => setFilter('active')}>
-          All open <Count n={rows.length} />
+        <FilterChip active={filter === 'active'} onClick={() => { setIncludeFinished(false); setFilter('active'); }}>
+          All open <Count n={rows.filter(r => r.production_status !== 'finished').length} />
         </FilterChip>
         {counts.late > 0 && (
-          <FilterChip active={filter === 'late'} onClick={() => setFilter('late')} danger>
+          <FilterChip active={filter === 'late'} onClick={() => { setIncludeFinished(false); setFilter('late'); }} danger>
             Late <Count n={counts.late} />
           </FilterChip>
         )}
-        {STAGES.filter(s => includeFinished || s.id !== 'finished').map(s => (
-          <FilterChip key={s.id} active={filter === s.id} onClick={() => setFilter(s.id)}>
+        {STAGES.filter(s => s.id !== 'finished').map(s => (
+          <FilterChip key={s.id} active={filter === s.id} onClick={() => { setIncludeFinished(false); setFilter(s.id); }}>
             {s.label} <Count n={counts[s.id] || 0} />
           </FilterChip>
         ))}
-        <label className="ml-auto flex items-center gap-2 text-xs text-ink-secondary cursor-pointer">
-          <input type="checkbox" checked={includeFinished} onChange={e => setIncludeFinished(e.target.checked)} />
-          Show finished
-        </label>
+        {/* Finished orders are a chip like any stage, not a hidden checkbox:
+            a closed order is still an order someone will want to look up. */}
+        <FilterChip active={filter === 'finished'} onClick={() => { setIncludeFinished(true); setFilter('finished'); }}>
+          Finished <Count n={finishedCount} />
+        </FilterChip>
       </div>
 
       {loading && <div className="text-center text-sm text-ink-secondary py-10">Loading…</div>}

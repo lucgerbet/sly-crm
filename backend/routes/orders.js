@@ -410,6 +410,16 @@ async function sendDocketToWorkshop(orderId, mode = 'initial') {
 
   const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId);
   if (!order) return { status: 404, body: { error: 'Order not found' } };
+  // A docket is built from the meeting's final configuration, which only
+  // /finalize writes. Sending one before that would ship the shop's rough
+  // config to the workshop and leave the order stranded in "Avant RDV" —
+  // exactly what happened to SLY-2026-0051 on 2026-09-18.
+  if (!order.finalized_at) {
+    return {
+      status: 409,
+      body: { error: "Commande pas encore actée — envoyez d'abord le lien de paiement du solde depuis l'outil de prise de commande, c'est ce qui enregistre la configuration finale. Le bon de commande part ensuite." },
+    };
+  }
   const client = db.prepare('SELECT * FROM clients WHERE id = ?').get(order.client_id);
 
   const settings = getSettings();
@@ -1241,6 +1251,12 @@ router.get('/production-board', (req, res) => {
     scope,
     // So the UI can offer the other scope without pretending it is empty.
     counts: {
+      // Always reported, so the "Finished" chip can show its count before
+      // those rows are loaded.
+      finished: db.prepare(`
+        SELECT COUNT(*) AS n FROM orders
+        WHERE finalized_at IS NOT NULL AND production_status = 'finished'
+      `).get().n,
       preMeeting: db.prepare(`
         SELECT COUNT(*) AS n FROM orders o
         WHERE o.finalized_at IS NULL
