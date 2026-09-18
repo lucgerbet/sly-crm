@@ -93,6 +93,27 @@ export function migrate() {
     -- clients.appointment* columns (used by the manual outreach STAGE_FLAGS
     -- chain in routes/clients.js) since a shop client can rebook/reorder and
     -- we need per-appointment status + reminder dedup, not a single slot.
+    -- The stylist tool's meetings, in full. Until 2026-09-18 a meeting lived
+    -- only in the browser that ran it (localStorage): closing one deleted it,
+    -- and a second device never saw it. Every draft and every closed meeting
+    -- is mirrored here as an opaque payload the tool owns; the CRM stores,
+    -- lists and hands it back, and never interprets it. The columns beside
+    -- the payload exist only so the list can be shown without unpacking it.
+    CREATE TABLE IF NOT EXISTS meetings (
+      id TEXT PRIMARY KEY,               -- the tool's own appointment id
+      status TEXT NOT NULL DEFAULT 'draft', -- draft | closed
+      client_name TEXT,
+      order_number TEXT,
+      crm_order_id TEXT,
+      step_index INTEGER,
+      payload_json TEXT NOT NULL,
+      device TEXT,                       -- free label of the device that last wrote it
+      updated_at TEXT NOT NULL,          -- the tool's own updatedAt, drives conflict resolution
+      closed_at TEXT,
+      created_at TEXT DEFAULT (datetime('now')),
+      synced_at TEXT DEFAULT (datetime('now'))
+    );
+
     CREATE TABLE IF NOT EXISTS appointments (
       id TEXT PRIMARY KEY,
       client_id TEXT NOT NULL,
