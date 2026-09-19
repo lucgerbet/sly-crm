@@ -244,6 +244,20 @@ router.post('/finalize', requireIntakeSecret, async (req, res) => {
       const previousTotalCents = (order.deposit_amount_cents || 0) + (order.balance_amount_cents || 0);
       const priceUnchanged = totalAmountCents === previousTotalCents;
       if (order.balance_status === 'paid' || priceUnchanged) {
+        // The order-taking tool can now call /finalize as soon as Payment is
+        // confirmed (2026-09-19), well before workshopDeadline/productionNotes
+        // are filled in at the later Production step — those two still need
+        // to land here even though the price/link/email are unchanged and
+        // this path deliberately skips re-sending anything to the client.
+        if (workshopDeadline || productionNotes) {
+          db.prepare(`
+            UPDATE orders SET
+              workshop_deadline = COALESCE(?, workshop_deadline),
+              production_notes = COALESCE(?, production_notes),
+              updated_at = datetime('now')
+            WHERE id = ?
+          `).run(workshopDeadline || null, productionNotes || null, order.id);
+        }
         return res.json({
           orderId: order.id,
           balanceAmountCents: order.balance_amount_cents,
